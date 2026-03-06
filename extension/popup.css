@@ -247,39 +247,6 @@ header {
 }
 .settings-nav-item:hover { color: var(--gray-900); }
 
-/* ── 步骤引导行 ─────────────────────────────────────────── */
-.step-row {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  margin-bottom: 12px;
-}
-
-.step-badge {
-  flex-shrink: 0;
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  background: var(--gray-200);
-  color: var(--gray-500);
-  font-size: 11px;
-  font-weight: 700;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  align-self: flex-start;
-  margin-top: 19px;
-}
-
-.step-card {
-  flex: 1;
-  min-width: 0;
-}
-
-/* Drop-zone 在 step-row 里去掉自身 margin */
-.step-row .drop-zone {
-  margin-bottom: 0;
-}
 
 /* ── 高级 JSON 全屏页 ───────────────────────────────────── */
 .advanced-page {
@@ -343,15 +310,18 @@ header {
   flex-direction: column;
 }
 
-/* Main Content */
+/* Main Content - 可滚动，底部留出固定栏高度避免被遮挡 */
 main {
   flex: 1;
+  min-height: 0;
   padding: 16px;
+  padding-bottom: 60px;
   display: flex;
   flex-direction: column;
   background: #ffffff;
   position: relative;
-  overflow: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 /* 旋转动画 */
@@ -394,13 +364,13 @@ main {
   box-shadow: 0 6px 16px rgba(26, 30, 43, 0.15);
 }
 
-/* 全宽紧凑行卡片（解析并填入） */
+/* 全宽紧凑行卡片（解析并填入 / 分析页面） */
 .card-full-row {
   flex-direction: row;
   align-items: center;
-  gap: 12px;
+  gap: 14px;
   min-height: 0;
-  padding: 11px 16px;
+  padding: 13px 16px;
   margin-bottom: 12px;
 }
 
@@ -472,8 +442,53 @@ main {
 
 .card-desc {
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.6);
+  color: rgba(255, 255, 255, 0.55);
   line-height: 1.4;
+}
+
+.grid-card.dark .card-content {
+  flex: 1;
+}
+
+.grid-card.dark .card-title {
+  color: #ffffff;
+}
+
+.grid-card.dark .card-desc {
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.grid-card.dark .card-icon {
+  color: #ffffff;
+  background: transparent;
+}
+
+/* 第一步执行中：分析中动画 */
+@keyframes card-analyzing {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.25); }
+  50% { box-shadow: 0 0 0 6px rgba(16, 185, 129, 0); }
+}
+#detect.is-analyzing {
+  animation: card-analyzing 1.6s ease-in-out infinite;
+}
+
+/* 分析/解析卡片右下角图标底纹 */
+.grid-card.dark.card-full-row {
+  position: relative;
+  overflow: hidden;
+}
+.card-watermark {
+  position: absolute;
+  right: 14px;
+  bottom: 6px;
+  font-size: 48px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  opacity: 0.14;
+  pointer-events: none;
+  color: currentColor;
+  font-variant-numeric: tabular-nums;
 }
 
 .grid-card.light .card-title {
@@ -505,34 +520,39 @@ main {
 
 /* Drop Zone */
 .drop-zone {
-  border: 1px dashed var(--gray-300);
+  border: 1px solid var(--gray-200);
   border-radius: var(--radius);
-  padding: 24px 16px;
+  padding: 22px 16px;
   text-align: center;
   background: var(--gray-50);
   cursor: pointer;
-  transition: all 0.2s ease;
-  margin-bottom: 16px;
+  transition: border-color 0.2s ease, background 0.2s ease;
+  margin-bottom: 12px;
   position: relative;
 }
 
 .drop-zone:hover,
 .drop-zone.drag-over {
   border-color: var(--brand-green);
-  background: #f0fdf4; /* primary-light like */
+  background: #f0fdf4;
 }
 
+/* 图标容器：pill 背景，普通状态下绿色药丸 */
 .drop-icon {
-  margin-bottom: 12px;
+  width: 44px;
+  height: 44px;
+  border-radius: 11px;
+  background: rgba(16, 185, 129, 0.1);
   display: flex;
   align-items: center;
   justify-content: center;
   color: var(--brand-green);
+  margin: 0 auto 12px;
 }
 
 .drop-icon svg {
-  width: 32px;
-  height: 32px;
+  width: 22px;
+  height: 22px;
 }
 
 .drop-text {
@@ -545,30 +565,45 @@ main {
 .drop-subtext {
   font-size: 12px;
   color: var(--gray-500);
+  line-height: 1.5;
 }
 
 /* Drop zone states */
 .drop-zone.has-files {
   border-color: var(--brand-green);
-  border-style: solid;
   background: #f0fdf4;
 }
 .drop-zone.has-files .drop-text { color: #065f46; }
 
+/* 第二步执行中：识别中动画 */
+@keyframes dropzone-parsing {
+  0%, 100% { border-color: var(--gray-200); background: var(--gray-100); }
+  50% { border-color: rgba(16, 185, 129, 0.4); background: rgba(16, 185, 129, 0.06); }
+}
 .drop-zone.is-parsing {
   pointer-events: none;
-  border-style: dashed;
   background: var(--gray-100);
-  opacity: 0.8;
+  border-color: var(--gray-200);
+  animation: dropzone-parsing 1.8s ease-in-out infinite;
+}
+
+.drop-zone.is-done {
+  cursor: default;
 }
 
 @keyframes dz-spin {
   0%   { transform: rotate(0deg); }
   100% { transform: rotate(360deg); }
 }
+/* 加载中：去掉 pill 背景，只旋转 svg */
 .drop-icon-spin {
   animation: dz-spin 1s linear infinite;
-  color: var(--gray-500) !important;
+  background: none !important;
+  border-radius: 0 !important;
+  color: var(--gray-400) !important;
+  width: auto !important;
+  height: auto !important;
+  margin-bottom: 10px !important;
 }
 
 /* Buttons */
@@ -646,16 +681,21 @@ main {
   margin-bottom: 24px;
 }
 
-/* Footer - 与顶部栏统一的 Axhub 风格：浅灰底、深色字、绿色状态点 */
+/* Footer - 底部固定，与顶部栏统一的 Axhub 风格 */
 footer {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
   display: flex;
   justify-content: space-between;
   align-items: center;
   padding: 12px 16px;
   background: #f8f8f8;
   border-top: 1px solid rgba(0, 0, 0, 0.06);
-  margin-top: auto;
   box-shadow: 0 -1px 3px 0 rgb(0 0 0 / 0.04);
+  z-index: 40;
+  flex-shrink: 0;
 }
 
 .footer-brand {
@@ -797,21 +837,11 @@ footer {
 }
 
 .json-history-item {
-  display: block;
+  display: flex;
+  align-items: center;
   width: 100%;
-  padding: 10px 14px;
-  text-align: left;
-  font-size: 12px;
-  color: var(--gray-700);
-  background: none;
-  border: none;
-  border-radius: 0;
-  cursor: pointer;
-  transition: background 0.15s;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
   border-bottom: 1px solid var(--gray-100);
+  transition: background 0.15s;
 }
 
 .json-history-item:last-child {
@@ -822,17 +852,55 @@ footer {
   background: var(--gray-50);
 }
 
-.json-history-item .item-preview {
+.json-history-item-main {
+  flex: 1;
+  min-width: 0;
+  padding: 10px 14px;
+  text-align: left;
+  font-size: 12px;
+  color: var(--gray-700);
+  background: none;
+  border: none;
+  border-radius: 0;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.json-history-item-main .item-preview {
   display: block;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.json-history-item .item-time {
+.json-history-item-main .item-time {
   font-size: 11px;
   color: var(--gray-400);
   margin-top: 2px;
+}
+
+.json-history-item-copy {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  margin-right: 6px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--gray-500);
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s;
+}
+
+.json-history-item-copy:hover {
+  color: var(--primary);
+  background: var(--gray-100);
 }
 
 /* Advanced / JSON Area */
@@ -919,24 +987,26 @@ input[type="text"]:focus {
   font-weight: 600;
   font-size: 13px;
   color: var(--brand-green);
-  margin-bottom: 8px;
+  margin-bottom: 6px;
 }
 .results-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 12px;
+  gap: 6px;
+  margin-top: 10px;
 }
 .btn-copy-list {
-  font-size: 12px;
+  font-size: 11px;
   padding: 4px 10px;
   background: #fff;
   border: 1px solid var(--gray-200);
-  border-radius: 4px;
+  border-radius: 6px;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  color: var(--gray-700);
+  transition: all 0.15s;
 }
 .btn-copy-list:hover {
   background: var(--gray-50);
@@ -944,14 +1014,43 @@ input[type="text"]:focus {
 }
 .btn-reset {
   width: 100%;
-  padding: 8px;
+  padding: 6px 12px;
   font-size: 12px;
-  background: var(--gray-100);
-  border: none;
-  border-radius: var(--radius-sm);
+  font-weight: 500;
+  color: var(--gray-700);
+  background: #fff;
+  border: 1px solid var(--gray-300);
+  border-radius: 6px;
   cursor: pointer;
-  margin-top: 12px;
+  margin-top: 10px;
+  transition: all 0.15s;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
 }
 .btn-reset:hover {
-  background: var(--gray-200);
+  color: var(--gray-800);
+  background: var(--gray-50);
+  border-color: var(--gray-400);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+}
+
+/* 中断识别按钮（drop-zone 内）*/
+.btn-cancel {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 14px;
+  padding: 6px 18px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--gray-600);
+  background: #ffffff;
+  border: 1px solid var(--gray-300);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.btn-cancel:hover {
+  color: var(--gray-800);
+  border-color: var(--gray-400);
+  background: var(--gray-50);
 }

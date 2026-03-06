@@ -4,7 +4,7 @@
 llm:
   base_url: "https://ark.cn-beijing.volces.com/api/v3"
   api_key: "6324ede5-50b5-49dc-97cf-5cbe752efabc"   # 也可用环境变量 ARK_API_KEY
-  model: "doubao-seed-2-0-mini-260215"
+  model: "doubao-seed-2-0-pro-260215"
 
 # 提交方式：playwright（浏览器填表） 或 api（直接调接口）
 submit:

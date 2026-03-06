@@ -29,12 +29,12 @@
       <div class="settings-section">
         <div class="settings-section-title">AI 模型</div>
         <label class="settings-radio-item">
-          <input type="radio" name="modelChoice" id="modelDefault" value="default" checked />
-          <span id="modelDefaultLabel">默认模型</span>
+          <input type="radio" name="modelChoice" id="modelPro" value="doubao-seed-2-0-pro-260215" checked />
+          <span>默认 (2.0 Pro)</span>
         </label>
         <label class="settings-radio-item">
-          <input type="radio" name="modelChoice" id="modelSeed" value="doubao-seed-2-0-pro-260215" />
-          <span>Seed-2.0 Pro</span>
+          <input type="radio" name="modelChoice" id="modelLite" value="doubao-seed-2-0-lite-260215" />
+          <span>2.0 Lite（备选）</span>
         </label>
       </div>
 
@@ -89,16 +89,17 @@
     <div id="onlyWhenDetected" class="hidden">
 
       <!-- 分析页面 -->
-      <div class="action-card light-card" id="detect" title="分析录题页面结构">
-        <div class="action-icon">
+      <div class="grid-card dark card-full-row" id="detect" title="分析录题页面结构">
+        <div class="card-icon">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
           </svg>
         </div>
-        <div class="action-content">
-          <div class="action-title" id="detectTitle">分析页面</div>
-          <div class="action-desc" id="detectDesc">识别当前录题表单</div>
+        <div class="card-content">
+          <div class="card-title" id="detectTitle">分析页面</div>
+          <div class="card-desc" id="detectDesc">识别当前录题表单</div>
         </div>
+        <span class="card-watermark" aria-hidden="true">1</span>
       </div>
 
       <div id="detect-result" class="message-area" style="display:none; margin-bottom:12px;"></div>
@@ -137,9 +138,7 @@
             </div>
             <div class="drop-text">正在 AI 识别中…</div>
             <div id="dzParsingSubtext" class="drop-subtext">关闭弹窗不会中断</div>
-            <button id="cancelParse" class="btn btn-primary" style="margin-top:16px; padding:4px 12px; font-size:12px;">
-              中断识别
-            </button>
+            <button id="cancelParse" class="btn-cancel">中断识别</button>
           </div>
 
           <!-- 识别完成 -->
@@ -153,7 +152,6 @@
             </div>
             <button type="button" id="resetParseState" class="btn-reset">重置状态</button>
           </div>
-        </div>
       </div>
 
       <input type="file" id="wordFiles" accept=".docx,.doc" multiple style="display:none;" />
@@ -165,10 +163,11 @@
             <path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
           </svg>
         </div>
-        <div>
+        <div class="card-content">
           <div class="card-title">解析并填入</div>
           <div class="card-desc">自动转化并填表</div>
         </div>
+        <span class="card-watermark" aria-hidden="true">2</span>
       </div>
 
       <div id="msg" class="message-area"></div>

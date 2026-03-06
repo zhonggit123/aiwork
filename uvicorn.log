@@ -1289,3 +1289,73 @@ INFO:     Finished server process [94054]
 INFO:     Started server process [2478]
 INFO:     Waiting for application startup.
 INFO:     Application startup complete.
+[parse-multiple] 收到页面字段结构: [{'label': 'ok', 'role': 'submit_btn', 'selector': '#ok'}, {'label': 'question_permission', 'role': 'question_permission', 'selector': '#permission'}]
+[parse-multiple] 收到录题页结构 1 题，将传给大模型
+[parse-multiple] 使用模型: doubao-seed-2-0-mini-260215
+[parse-multiple] 文件 '(1)七年级驰声宜昌听说试题 unit 1 答案材料.docx' -> 类型: answer_material
+[parse-multiple] 文件 '(1)七年级驰声宜昌听说试题 unit 1 试题.docx' -> 类型: exam
+[parse-multiple] 试题文件: 1 个, 答案材料: 1 个
+[parse-multiple] 策略: 试题+答案材料合并解析
+[parse-multiple] 解析完成，共 17 题
+[parse-multiple] 收到页面字段结构: [{'label': '上传音频：', 'role': 'audio_url', 'selector': '#audioFileName'}, {'label': '上传音频：', 'role': 'audio_file', 'selector': '#select_btn_1'}, {'label': '听力原文：', 'role': 'listening_script', 'selector': '[id="4bfbe471-cb48-8af6-99dc-2ede8daea52d"]'}, {'label': '设置题干：', 'role': 'question', 'selector': '#fb51c75e-ff2d-382b-034e-964a0265bf18'}, {'label': 'A', 'role': 'option_a', 'selector': '[id="058337dd-2f0c-9c2c-bf71-41864b50db55"]'}, {'label': 'B', 'role': 'option_b', 'selector': '[id="700e15b5-ea3b-18b0-8f87-a047c525b341"]'}, {'label': 'C', 'role': 'option_c', 'selector': '#bb5558ea-277c-dfaf-9e49-69df8aa8ff64'}, {'label': 'D', 'role': 'option_d', 'selector': '[id="3019345c-9ac8-c44c-9c17-6bb8b784a5a9"]'}, {'label': '设置选项：', 'role': 'submit_btn', 'selector': 'button.btn.add.add-option'}, {'label': 'A', 'role': 'answer', 'selector': '#answer_1'}, {'label': '解析：', 'role': 'explanation', 'selector': '#analysis'}, {'label': '*适用年级：', 'role': 'grade', 'selector': 'div.jsCascaderWarp.topic-cascader.cascader-input'}, {'label': '*课程：', 'role': 'course', 'selector': '#course'}, {'label': '*课程单元：', 'role': 'unit', 'selector': '#teaching'}, {'label': '*知识点：', 'role': 'knowledge_point', 'selector': '#knowledge'}, {'label': 'difficulty', 'role': 'difficulty', 'selector': '#difficulty'}, {'label': 'question_permission', 'role': 'question_permission', 'selector': '#permission'}, {'label': '第1小题题干', 'role': 'blank_question_1', 'selector': '[id="12607d8b-28f1-fb1d-58a0-b2f3392e1012"]'}, {'label': '第2小题题干', 'role': 'blank_question_2', 'selector': '#c7ccfe8f-7644-76c4-b6dd-7d779bc26bf5'}, {'label': '题干图片：', 'role': 'image_url', 'selector': '#imageFileName'}, {'label': '题干图片：', 'role': 'image_file', 'selector': '#select_btn_3'}]
+[parse-multiple] 试卷结构题数: 15，将约束大模型只提取 15 题
+[parse-multiple] 收到录题页结构 15 题，将传给大模型
+[parse-multiple] 使用模型: doubao-seed-2-0-mini-260215
+[parse-multiple] 文件 '(1)七年级驰声宜昌听说试题 unit 1 答案材料.docx' -> 类型: answer_material
+[parse-multiple] 文件 '(1)七年级驰声宜昌听说试题 unit 1 试题.docx' -> 类型: exam
+[parse-multiple] 试题文件: 1 个, 答案材料: 1 个
+[parse-multiple] 策略: 试题+答案材料合并解析
+[parse-multiple] 解析完成，共 15 题
+INFO:     127.0.0.1:63910 - "POST /api/parse-multiple HTTP/1.1" 200 OK
+[parse-multiple] 收到页面字段结构: [{'label': '上传音频：', 'role': 'audio_url', 'selector': '#audioFileName'}, {'label': '上传音频：', 'role': 'audio_file', 'selector': '#select_btn_1'}, {'label': '听力原文：', 'role': 'listening_script', 'selector': '#a178236c-291c-3846-47fb-da16551744e8'}, {'label': '设置题干：', 'role': 'question', 'selector': '[id="8f33493f-39a1-bd66-8ff6-c1fb8dfb0890"]'}, {'label': 'A', 'role': 'option_a', 'selector': '#a2c161e4-9c0c-0c9a-cb16-aa5047bca0b1'}, {'label': 'B', 'role': 'option_b', 'selector': '#a6af0ec7-bcb2-458e-bbff-2faac0215bd7'}, {'label': 'C', 'role': 'option_c', 'selector': '#d681b029-db70-e654-09aa-120edc43500f'}, {'label': 'D', 'role': 'option_d', 'selector': '[id="543dcae9-b538-839c-7817-e474d1d10178"]'}, {'label': '设置选项：', 'role': 'submit_btn', 'selector': 'button.btn.add.add-option'}, {'label': 'A', 'role': 'answer', 'selector': '#answer_1'}, {'label': '解析：', 'role': 'explanation', 'selector': '#analysis'}, {'label': '*适用年级：', 'role': 'grade', 'selector': 'div.jsCascaderWarp.topic-cascader.cascader-input'}, {'label': '*课程：', 'role': 'course', 'selector': '#course'}, {'label': '*课程单元：', 'role': 'unit', 'selector': '#teaching'}, {'label': '*知识点：', 'role': 'knowledge_point', 'selector': '#knowledge'}, {'label': 'difficulty', 'role': 'difficulty', 'selector': '#difficulty'}, {'label': 'question_permission', 'role': 'question_permission', 'selector': '#permission'}, {'label': '第1小题题干', 'role': 'blank_question_1', 'selector': '[id="689d3d6d-8a7b-d00c-8dc5-5d3b7dcee1dc"]'}, {'label': '第2小题题干', 'role': 'blank_question_2', 'selector': '[id="079af962-4d41-530d-baf5-8bbad80309b9"]'}, {'label': '题干图片：', 'role': 'image_url', 'selector': '#imageFileName'}, {'label': '题干图片：', 'role': 'image_file', 'selector': '#select_btn_3'}]
+[parse-multiple] 试卷结构题数: 15，将约束大模型只提取 15 题
+[parse-multiple] 收到录题页结构 15 题，将传给大模型
+[parse-multiple] 使用模型: doubao-seed-2-0-pro-260215
+[parse-multiple] 文件 '(1)七年级驰声宜昌听说试题 unit 1 答案材料.docx' -> 类型: answer_material
+[parse-multiple] 文件 '(1)七年级驰声宜昌听说试题 unit 1 试题.docx' -> 类型: exam
+[parse-multiple] 试题文件: 1 个, 答案材料: 1 个
+[parse-multiple] 策略: 试题+答案材料合并解析
+[parse-multiple] 解析完成，共 15 题
+INFO:     127.0.0.1:50197 - "POST /api/parse-multiple HTTP/1.1" 200 OK
+WARNING:  WatchFiles detected changes in 'llm_extract.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [2478]
+INFO:     Started server process [78369]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'llm_extract.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [78369]
+INFO:     Started server process [78727]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+[parse-multiple] 收到页面字段结构: [{'label': '上传音频：', 'role': 'audio_url', 'selector': '#audioFileName'}, {'label': '上传音频：', 'role': 'audio_file', 'selector': '#select_btn_1'}, {'label': '听力原文：', 'role': 'listening_script', 'selector': '[id="0838898b-ca9e-7c50-5f61-1c43d850b74c"]'}, {'label': '设置题干：', 'role': 'question', 'selector': '[id="5ca7a27a-fdee-970d-c345-23e291dfbb5b"]'}, {'label': 'A', 'role': 'option_a', 'selector': '[id="2f89254f-9420-f754-16bf-f9b72c0bb25d"]'}, {'label': 'B', 'role': 'option_b', 'selector': '[id="416f0f87-03de-651c-6da9-164c45a38eaf"]'}, {'label': 'C', 'role': 'option_c', 'selector': '#b86cee9b-43ec-0ef4-d163-a6d951c1ea7e'}, {'label': 'D', 'role': 'option_d', 'selector': '#b662148d-94ac-17a2-68c4-84d5dfcaaf9c'}, {'label': '设置选项：', 'role': 'submit_btn', 'selector': 'button.btn.add.add-option'}, {'label': 'A', 'role': 'answer', 'selector': '#answer_1'}, {'label': '解析：', 'role': 'explanation', 'selector': '#analysis'}, {'label': '*适用年级：', 'role': 'grade', 'selector': 'div.jsCascaderWarp.topic-cascader.cascader-input'}, {'label': '*课程：', 'role': 'course', 'selector': '#course'}, {'label': '*课程单元：', 'role': 'unit', 'selector': '#teaching'}, {'label': '*知识点：', 'role': 'knowledge_point', 'selector': '#knowledge'}, {'label': 'difficulty', 'role': 'difficulty', 'selector': '#difficulty'}, {'label': 'question_permission', 'role': 'question_permission', 'selector': '#permission'}, {'label': '第1小题题干', 'role': 'blank_question_1', 'selector': '[id="53cb4827-e3fc-c037-792d-30c1c55633bc"]'}, {'label': '第2小题题干', 'role': 'blank_question_2', 'selector': '#b97a4333-374b-e34f-2c1c-1e4172674854'}, {'label': '题干图片：', 'role': 'image_url', 'selector': '#imageFileName'}, {'label': '题干图片：', 'role': 'image_file', 'selector': '#select_btn_3'}]
+[parse-multiple] 试卷结构题数: 15，将约束大模型只提取 15 题
+[parse-multiple] 收到录题页结构 15 题，将传给大模型
+[parse-multiple] 使用模型: doubao-seed-2-0-pro-260215
+[parse-multiple] 文件 '(1)七年级驰声宜昌听说试题 unit 1 答案材料.docx' -> 类型: answer_material
+[parse-multiple] 文件 '(1)七年级驰声宜昌听说试题 unit 1 试题.docx' -> 类型: exam
+[parse-multiple] 试题文件: 1 个, 答案材料: 1 个
+[parse-multiple] 策略: 试题+答案材料合并解析
+[parse-multiple] 解析完成，共 15 题
+INFO:     127.0.0.1:56945 - "POST /api/parse-multiple HTTP/1.1" 200 OK
+WARNING:  WatchFiles detected changes in 'llm_extract.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [78727]
+INFO:     Started server process [60465]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'llm_extract.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [60465]
+INFO:     Started server process [60753]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.

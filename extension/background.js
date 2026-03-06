@@ -383,9 +383,10 @@ async function handleParse(filesData) {
     if (parseDebugMode) {
       formData.append("debug", "1");
     }
-    if (selectedModel && selectedModel !== "default") {
-      formData.append("model_override", selectedModel);
-    }
+    const modelToUse = (selectedModel && selectedModel !== "default")
+      ? selectedModel
+      : "doubao-seed-2-0-pro-260215";
+    formData.append("model_override", modelToUse);
 
     const r = await fetch(BACKEND + "/api/parse-multiple", {
       method: "POST",

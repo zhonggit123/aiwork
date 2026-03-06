@@ -91,13 +91,13 @@ async function refreshMonitorState() {
       // 恢复按钮初始状态
       if (detectBtnIcon) {
         detectBtnIcon.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>`;
-        detectBtnIcon.style.color = "var(--gray-600)";
-        detectBtnIcon.style.background = "var(--gray-100)";
+        detectBtnIcon.style.color = "";
+        detectBtnIcon.style.background = "";
         detectBtnIcon.classList.remove("icon-spin");
       }
       if (detectBtnTitle) {
         detectBtnTitle.textContent = "分析页面";
-        detectBtnTitle.style.color = "var(--gray-800)";
+        detectBtnTitle.style.color = "";
       }
       if (detectBtnDesc) {
         detectBtnDesc.textContent = "识别当前表单";
@@ -154,23 +154,13 @@ restoreParseState();
     = await chrome.storage.sync.get(["selectedModel", "parseDebugMode", "defaultAudioUrl", "defaultImageUrl"]);
 
   const radios = document.querySelectorAll('input[name="modelChoice"]');
-  const savedM = selectedModel || "default";
+  const savedM = selectedModel || "doubao-seed-2-0-pro-260215";
   radios.forEach(r => { r.checked = (r.value === savedM); });
   radios.forEach(r => {
     r.addEventListener("change", () => {
       if (r.checked) chrome.storage.sync.set({ selectedModel: r.value });
     });
   });
-
-  // 从后端读取默认模型名显示
-  try {
-    const cfg = await (await fetch("http://localhost:18080/api/config")).json();
-    const defModel = (cfg?.llm?.model || "").split("/").pop(); // 只显示短名
-    if (defModel) {
-      const labelEl = document.getElementById("modelDefaultLabel");
-      if (labelEl) labelEl.textContent = `默认 (${defModel})`;
-    }
-  } catch (_) {}
 
   // ── 解析调试模式切换开关 ──────────────────────────────────
   const cbDebug      = document.getElementById("parseDebugMode");
@@ -271,7 +261,7 @@ chrome.runtime.onMessage.addListener((msg) => {
     setDropZoneState("done", { questions: msg.questions, debug_info: msg.debug_info });
     setMsg("", false);
     updateFillCacheDot();
-    pushJsonHistory(JSON.stringify(msg.questions)).catch(() => {});
+    pushJsonHistory(JSON.stringify(msg.questions), msg.debug_info || null).catch(() => {});
     doFill(msg.questions);
   }
   if (msg.type === "PARSE_ERROR") {
@@ -340,6 +330,7 @@ document.getElementById("openOurUrl").addEventListener("click", () => {
 
 document.getElementById("detect").addEventListener("click", async () => {
   const resultEl = document.getElementById("detect-result");
+  const detectEl = document.getElementById("detect");
   resultEl.textContent = "正在检测页面结构，将自动切换下一题遍历各题…";
   resultEl.className = "message-area text-muted";
   resultEl.style.display = "block";
@@ -349,6 +340,7 @@ document.getElementById("detect").addEventListener("click", async () => {
   const detectBtnDesc = document.querySelector("#detect .card-desc");
 
   // 状态更新为分析中
+  if (detectEl) detectEl.classList.add("is-analyzing");
   if (detectBtnIcon) {
     detectBtnIcon.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>`;
     detectBtnIcon.classList.add("icon-spin");
@@ -368,14 +360,15 @@ document.getElementById("detect").addEventListener("click", async () => {
     if (detectBtnIcon) {
       detectBtnIcon.classList.remove("icon-spin");
       detectBtnIcon.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>`;
-      detectBtnIcon.style.color = "var(--gray-600)";
-      detectBtnIcon.style.background = "var(--gray-100)";
+      detectBtnIcon.style.color = "";
+      detectBtnIcon.style.background = "";
     }
     if (detectBtnTitle) {
       detectBtnTitle.textContent = "分析页面";
-      detectBtnTitle.style.color = "var(--gray-800)";
+      detectBtnTitle.style.color = "";
     }
     if (detectBtnDesc) detectBtnDesc.textContent = "识别当前表单";
+    if (detectEl) detectEl.classList.remove("is-analyzing");
     return;
   }
   // 先发 PING 确认 content 已注入，避免误报「注入失败」
@@ -384,6 +377,7 @@ document.getElementById("detect").addEventListener("click", async () => {
   } catch (pingErr) {
     resultEl.textContent = "无法连接录题页，请确保当前标签页是录题页并刷新该页后再点「开始检测」。";
     resultEl.classList.add("text-error");
+    if (detectEl) detectEl.classList.remove("is-analyzing");
     return;
   }
   resultEl.textContent = "正在遍历各题（约 10～30 秒），请勿关闭本弹窗…";
@@ -398,14 +392,15 @@ document.getElementById("detect").addEventListener("click", async () => {
       resultEl.className = "message-area text-error";
       if (detectBtnIcon) {
         detectBtnIcon.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>`;
-        detectBtnIcon.style.color = "var(--gray-600)";
-        detectBtnIcon.style.background = "var(--gray-100)";
+        detectBtnIcon.style.color = "";
+        detectBtnIcon.style.background = "";
       }
       if (detectBtnTitle) {
         detectBtnTitle.textContent = "分析页面";
-        detectBtnTitle.style.color = "var(--gray-800)";
+        detectBtnTitle.style.color = "";
       }
       if (detectBtnDesc) detectBtnDesc.textContent = "识别当前表单";
+      if (detectEl) detectEl.classList.remove("is-analyzing");
       return;
     }
     const { selectors, fields, message, walked, total, slots } = res;
@@ -430,13 +425,14 @@ document.getElementById("detect").addEventListener("click", async () => {
     resultEl.style.display = "block";
     
     // 更新按钮状态为已识别
+    if (detectEl) detectEl.classList.remove("is-analyzing");
     if (detectBtnIcon) {
-      detectBtnIcon.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"></path></svg>`;
-      detectBtnIcon.style.color = "var(--brand-green)";
-      detectBtnIcon.style.background = "rgba(16, 185, 129, 0.1)";
-    }
-    if (detectBtnTitle) {
-      detectBtnTitle.textContent = "已分析";
+        detectBtnIcon.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"></path></svg>`;
+        detectBtnIcon.style.color = "var(--brand-green)";
+        detectBtnIcon.style.background = "rgba(16, 185, 129, 0.1)";
+      }
+      if (detectBtnTitle) {
+        detectBtnTitle.textContent = "已分析";
       detectBtnTitle.style.color = "var(--brand-green)";
     }
     if (detectBtnDesc) {
@@ -453,15 +449,16 @@ document.getElementById("detect").addEventListener("click", async () => {
     setTimeout(() => { resultEl.style.display = "none"; }, 5000);
   } catch (e) {
     const errMsg = String(e?.message || e);
+    if (detectEl) detectEl.classList.remove("is-analyzing");
     if (detectBtnIcon) {
       detectBtnIcon.classList.remove("icon-spin");
       detectBtnIcon.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>`;
-      detectBtnIcon.style.color = "var(--gray-600)";
-      detectBtnIcon.style.background = "var(--gray-100)";
+      detectBtnIcon.style.color = "";
+      detectBtnIcon.style.background = "";
     }
     if (detectBtnTitle) {
       detectBtnTitle.textContent = "分析页面";
-      detectBtnTitle.style.color = "var(--gray-800)";
+      detectBtnTitle.style.color = "";
     }
     if (detectBtnDesc) detectBtnDesc.textContent = "识别当前表单";
 
@@ -563,11 +560,17 @@ async function getJsonHistory() {
   const { jsonHistory } = await chrome.storage.local.get("jsonHistory");
   return Array.isArray(jsonHistory) ? jsonHistory : [];
 }
-async function pushJsonHistory(jsonText) {
+async function pushJsonHistory(jsonText, debugInfo) {
   if (!jsonText || typeof jsonText !== "string" || !jsonText.trim()) return;
   const list = await getJsonHistory();
   const trimmed = jsonText.trim();
-  const next = { text: trimmed, time: Date.now() };
+  const next = {
+    text: trimmed,
+    time: Date.now(),
+    debug_info: debugInfo && (debugInfo.system_prompt || debugInfo.user_content)
+      ? { system_prompt: debugInfo.system_prompt || "", user_content: debugInfo.user_content || "" }
+      : undefined,
+  };
   const filtered = list.filter((item) => item.text !== trimmed);
   const nextList = [next, ...filtered].slice(0, JSON_HISTORY_MAX);
   await chrome.storage.local.set({ jsonHistory: nextList });
@@ -1139,14 +1142,16 @@ if (jsonHistoryBtn && jsonHistoryDropdown) {
       return;
     }
     for (const item of list) {
-      const btn = document.createElement("button");
-      btn.type = "button";
-      btn.className = "json-history-item";
+      const wrap = document.createElement("div");
+      wrap.className = "json-history-item";
       let preview = item.text.slice(0, 60);
       if (item.text.length > 60) preview += "…";
       const timeStr = item.time ? new Date(item.time).toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }) : "";
-      btn.innerHTML = `<span class="item-preview">${escapeHtml(preview)}</span><span class="item-time">${escapeHtml(timeStr)}</span>`;
-      btn.addEventListener("click", async (ev) => {
+      const mainBtn = document.createElement("button");
+      mainBtn.type = "button";
+      mainBtn.className = "json-history-item-main";
+      mainBtn.innerHTML = `<span class="item-preview">${escapeHtml(preview)}</span><span class="item-time">${escapeHtml(timeStr)}</span>`;
+      mainBtn.addEventListener("click", async (ev) => {
         ev.preventDefault();
         jsonHistoryDropdown.classList.add("hidden");
         let questions;
@@ -1166,7 +1171,45 @@ if (jsonHistoryBtn && jsonHistoryDropdown) {
         if (ta) ta.value = item.text;
         doFill(questions);
       });
-      jsonHistoryDropdown.appendChild(btn);
+      const copyBtn = document.createElement("button");
+      copyBtn.type = "button";
+      copyBtn.className = "json-history-item-copy";
+      copyBtn.title = "复制 JSON";
+      copyBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>`;
+      copyBtn.addEventListener("click", async (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        try {
+          await navigator.clipboard.writeText(item.text);
+          setMsg("已复制 JSON 到剪贴板", false);
+          setTimeout(() => setMsg("", false), 1500);
+        } catch (_) {
+          setMsg("复制失败", true);
+        }
+      });
+      wrap.appendChild(mainBtn);
+      wrap.appendChild(copyBtn);
+      if (item.debug_info && item.debug_info.system_prompt) {
+        const promptBtn = document.createElement("button");
+        promptBtn.type = "button";
+        promptBtn.className = "json-history-item-copy";
+        promptBtn.title = "复制请求 Prompt";
+        promptBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>`;
+        promptBtn.addEventListener("click", async (ev) => {
+          ev.preventDefault();
+          ev.stopPropagation();
+          const text = "=== System Prompt ===\n\n" + (item.debug_info.system_prompt || "") + "\n\n=== Word 原文 ===\n\n" + (item.debug_info.user_content || "").slice(0, 50000);
+          try {
+            await navigator.clipboard.writeText(text);
+            setMsg("已复制请求 Prompt 到剪贴板", false);
+            setTimeout(() => setMsg("", false), 1500);
+          } catch (_) {
+            setMsg("复制失败", true);
+          }
+        });
+        wrap.appendChild(promptBtn);
+      }
+      jsonHistoryDropdown.appendChild(wrap);
     }
     jsonHistoryDropdown.classList.remove("hidden");
   });
@@ -1520,6 +1563,7 @@ const detectBtn = document.getElementById("detect");
 if (detectBtn) {
   detectBtn.addEventListener("click", async () => {
     const resultEl = document.getElementById("detect-result");
+    const detectEl = document.getElementById("detect");
     resultEl.style.display = "block";
     resultEl.textContent = "正在分析页面结构，请稍候...";
     resultEl.className = "message-area text-muted";
@@ -1536,6 +1580,7 @@ if (detectBtn) {
     const detectBtnDesc = document.querySelector("#detect .card-desc");
 
     // 状态更新为分析中
+    if (detectEl) detectEl.classList.add("is-analyzing");
     if (detectBtnIcon) {
       detectBtnIcon.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>`;
       detectBtnIcon.classList.add("icon-spin");
@@ -1556,14 +1601,15 @@ if (detectBtn) {
       if (detectBtnIcon) {
         detectBtnIcon.classList.remove("icon-spin");
         detectBtnIcon.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>`;
-        detectBtnIcon.style.color = "var(--gray-600)";
-        detectBtnIcon.style.background = "var(--gray-100)";
+        detectBtnIcon.style.color = "";
+        detectBtnIcon.style.background = "";
       }
       if (detectBtnTitle) {
         detectBtnTitle.textContent = "分析页面";
-        detectBtnTitle.style.color = "var(--gray-800)";
+        detectBtnTitle.style.color = "";
       }
       if (detectBtnDesc) detectBtnDesc.textContent = "识别当前表单";
+      if (detectEl) detectEl.classList.remove("is-analyzing");
       return;
     }
 
@@ -1577,14 +1623,15 @@ if (detectBtn) {
         if (detectBtnIcon) {
           detectBtnIcon.classList.remove("icon-spin");
           detectBtnIcon.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>`;
-          detectBtnIcon.style.color = "var(--gray-600)";
-          detectBtnIcon.style.background = "var(--gray-100)";
+          detectBtnIcon.style.color = "";
+          detectBtnIcon.style.background = "";
         }
         if (detectBtnTitle) {
           detectBtnTitle.textContent = "分析页面";
-          detectBtnTitle.style.color = "var(--gray-800)";
+          detectBtnTitle.style.color = "";
         }
         if (detectBtnDesc) detectBtnDesc.textContent = "识别当前表单";
+        if (detectEl) detectEl.classList.remove("is-analyzing");
         return;
       }
 
@@ -1604,6 +1651,7 @@ if (detectBtn) {
       resultEl.style.display = "block";
       
       // 更新按钮状态为已识别
+      if (detectEl) detectEl.classList.remove("is-analyzing");
       if (detectBtnIcon) {
         detectBtnIcon.classList.remove("icon-spin");
         detectBtnIcon.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"></path></svg>`;
@@ -1630,14 +1678,15 @@ if (detectBtn) {
       if (detectBtnIcon) {
         detectBtnIcon.classList.remove("icon-spin");
         detectBtnIcon.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>`;
-        detectBtnIcon.style.color = "var(--gray-600)";
-        detectBtnIcon.style.background = "var(--gray-100)";
+        detectBtnIcon.style.color = "";
+        detectBtnIcon.style.background = "";
       }
       if (detectBtnTitle) {
         detectBtnTitle.textContent = "分析页面";
-        detectBtnTitle.style.color = "var(--gray-800)";
+        detectBtnTitle.style.color = "";
       }
       if (detectBtnDesc) detectBtnDesc.textContent = "识别当前表单";
+      if (detectEl) detectEl.classList.remove("is-analyzing");
       
       resultEl.textContent = "分析中断：" + e.message;
       resultEl.className = "message-area text-error";
