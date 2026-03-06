@@ -1,0 +1,31 @@
+[
+  {
+    "question": "【测试选择题】听对话，选择正确答案。题干由插件填入。",
+    "options": ["选项A：测试内容", "选项B：测试内容", "选项C：测试内容", "选项D：测试内容"],
+    "answer": "B",
+    "explanation": "这是解析的测试内容，用于验证「解析」框能否填入。",
+    "listening_script": "听力原文测试：可用于学生报告呈现。",
+    "course": "牛津译林",
+    "difficulty": "中等",
+    "knowledge_point": "个人信息,家庭信息,学校信息",
+    "grade": "七年级上",
+    "unit": "七年级上册/Unit 1 This is me./Comic strip",
+    "question_permission": "仅自己可见"
+  },
+  {
+    "type": "listening_fill",
+    "question": "【测试听后填空】根据所听内容完成填空。",
+    "blanks": [
+      { "question": "第1空提示", "answer": "答案一" },
+      { "question": "第2空提示", "answer": "答案二" }
+    ],
+    "answer": "答案一",
+    "explanation": "听后填空题的解析测试。",
+    "listening_script": "听后填空的听力原文测试。",
+    "course": "牛津译林",
+    "difficulty": "困难",
+    "grade": "七年级上",
+    "unit": "七年级上册/Unit 1 This is me./Welcome to the unit",
+    "question_permission": "仅自己可见"
+  }
+]

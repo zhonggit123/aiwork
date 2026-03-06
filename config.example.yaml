@@ -1,0 +1,46 @@
+# 复制为 config.yaml 并填写真实配置
+
+# 大模型 API（当前为火山引擎豆包，兼容 OpenAI 接口）
+llm:
+  base_url: "https://ark.cn-beijing.volces.com/api/v3"
+  api_key: "6324ede5-50b5-49dc-97cf-5cbe752efabc"   # 也可用环境变量 ARK_API_KEY
+  model: "doubao-seed-2-0-mini-260215"
+
+# 提交方式：playwright（浏览器填表） 或 api（直接调接口）
+submit:
+  mode: api   # api | playwright
+
+  # --- 仅当 mode=api 时需要 ---
+  # 在浏览器 F12 -> Network 里抓到的“保存题目”请求的 URL 和请求体结构
+  api:
+    url: "https://your-system.com/api/questions/save"
+    method: POST
+    # 请求头（如有登录 token 等）
+    headers:
+      Content-Type: "application/json"
+      Authorization: "Bearer YOUR_TOKEN"
+    # 下面字段名需和你们系统接口一致，可先抓包看 JSON 结构再改
+    body_mapping:
+      question: "content"        # AI 提取的题干 -> 接口字段名
+      options: "options"         # 选项列表
+      answer: "answer"
+      explanation: "explanation"
+
+  # --- 仅当 mode=playwright 时需要 ---
+  # 录题页面的输入框选择器（F12 检查元素得到 id/name/class）
+  playwright:
+    page_url: "https://your-system.com/teacher/input"
+    selectors:
+      question: "#questionText"      # 题干
+      option_a: "#optionA"
+      option_b: "#optionB"
+      option_c: "#optionC"
+      option_d: "#optionD"
+      answer: "#answer"
+      explanation: "#explanation"
+      submit_btn: "button[type=submit]"
+
+# Word 与批处理
+word:
+  path: "题库.docx"   # 或绝对路径
+  questions_per_batch: 5   # 每几题打一批发给 LLM（避免超长）

@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Word 题库录入</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h1>Word 题库录入</h1>
+      <div class="path-block">
+        <span class="path-label">技术实现路径</span>
+        <div class="path-flow">
+          <span class="path-step">上传 Word</span>
+          <span class="path-arrow" aria-hidden="true">→</span>
+          <span class="path-step">AI 解析</span>
+          <span class="path-arrow" aria-hidden="true">→</span>
+          <span class="path-step">编辑</span>
+          <span class="path-arrow" aria-hidden="true">→</span>
+          <span class="path-step">提交到录题系统</span>
+        </div>
+        <p class="path-desc">第一步：选择 Word 文件，由 AI 解析出题目；解析后可在下方表格中编辑，再复制 JSON 或一键提交。</p>
+      </div>
+    </header>
+
+    <section class="upload" id="uploadSection">
+      <label class="file-label">
+        <input type="file" id="file" accept=".docx,.doc" multiple />
+        <span class="file-btn">选择 Word 文件并解析</span>
+      </label>
+      <p class="drop-hint">或将 .docx 文件拖拽到此处（可多选）</p>
+      <p id="parse-status" class="status"></p>
+    </section>
+
+    <section class="actions" id="actions" hidden>
+      <button type="button" id="copy-json">复制 JSON</button>
+      <button type="button" id="submit-api" class="primary">一键提交到系统</button>
+      <span id="submit-status" class="status"></span>
+    </section>
+
+    <section class="table-wrap" id="table-wrap" hidden>
+      <table>
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>题型</th>
+            <th>题干</th>
+            <th>选项</th>
+            <th>答案</th>
+            <th>解析</th>
+          </tr>
+        </thead>
+        <tbody id="tbody"></tbody>
+      </table>
+    </section>
+
+    <footer class="page-footer">
+      <p>在驰声录题页自动填表：先打开录题页面，再点浏览器「题库自动填表」插件；插件会检测到录题页后显示上传 Word（支持拖拽），解析后自动填入当前页。</p>
+    </footer>
+  </div>
+  <script src="/static/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <title>插件设置 - 题库自动填表</title>
+  <style>
+    :root {
+      --primary: #0d9488;
+      --primary-hover: #0f766e;
+      --primary-gradient: linear-gradient(145deg, #0d9488 0%, #0891b2 100%);
+      --gray-50: #f8fafc;
+      --gray-100: #f1f5f9;
+      --gray-200: #e2e8f0;
+      --gray-300: #cbd5e1;
+      --gray-500: #64748b;
+      --gray-700: #334155;
+      --gray-800: #1e293b;
+      --gray-900: #0f172a;
+      --radius: 14px;
+      --radius-sm: 10px;
+    }
+    body {
+      font-family: "DM Sans", "Noto Sans SC", system-ui, -apple-system, sans-serif;
+      max-width: 600px;
+      margin: 40px auto;
+      padding: 36px 32px;
+      background: linear-gradient(180deg, #f0fdfa 0%, #f8fafc 30%, #f1f5f9 100%);
+      color: var(--gray-700);
+      min-height: 100vh;
+      border-radius: 20px;
+      box-shadow: 0 12px 40px -8px rgba(13, 148, 136, 0.08), 0 4px 16px -4px rgba(0, 0, 0, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.9);
+    }
+    .options-header {
+      display: flex;
+      align-items: flex-start;
+      gap: 16px;
+      margin-bottom: 28px;
+    }
+    .options-header .logo-wrap {
+      width: 48px;
+      height: 48px;
+      border-radius: 14px;
+      background: var(--primary-gradient);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      box-shadow: 0 4px 14px rgba(13, 148, 136, 0.3);
+    }
+    .options-header .logo-wrap svg {
+      width: 26px;
+      height: 26px;
+      color: white;
+    }
+    .options-header .desc { margin-bottom: 0; }
+    h1 {
+      font-size: 22px;
+      margin-bottom: 8px;
+      font-weight: 700;
+      background: linear-gradient(135deg, #115e59 0%, #0e7490 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    p.desc {
+      color: var(--gray-500);
+      font-size: 14px;
+      margin-bottom: 28px;
+      line-height: 1.55;
+    }
+    .form-group {
+      background: rgba(255, 255, 255, 0.92);
+      padding: 22px;
+      border-radius: var(--radius);
+      box-shadow: 0 4px 12px -2px rgba(13, 148, 136, 0.06), 0 1px 3px rgba(0, 0, 0, 0.04);
+      margin-bottom: 20px;
+      border: 1px solid rgba(255, 255, 255, 0.9);
+      transition: box-shadow 0.25s ease;
+    }
+    .form-group:hover {
+      box-shadow: 0 8px 20px -4px rgba(13, 148, 136, 0.08), 0 2px 6px rgba(0, 0, 0, 0.04);
+    }
+    label {
+      display: block;
+      margin-top: 16px;
+      font-weight: 600;
+      font-size: 14px;
+      color: var(--gray-800);
+    }
+    label:first-child { margin-top: 0; }
+    input {
+      width: 100%;
+      padding: 11px 14px;
+      border: 1px solid var(--gray-200);
+      border-radius: var(--radius-sm);
+      margin-top: 6px;
+      font-size: 14px;
+      transition: all 0.2s;
+      box-sizing: border-box;
+      background: var(--gray-50);
+    }
+    input:focus {
+      outline: none;
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(13, 148, 136, 0.12);
+      background: white;
+    }
+    button {
+      margin-top: 28px;
+      padding: 14px 24px;
+      background: var(--primary-gradient);
+      color: #fff;
+      border: none;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      font-weight: 600;
+      font-size: 15px;
+      transition: all 0.2s;
+      width: 100%;
+      box-shadow: 0 4px 14px rgba(13, 148, 136, 0.3);
+    }
+    button:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 6px 18px rgba(13, 148, 136, 0.4);
+    }
+    .saved {
+      color: #047857;
+      font-size: 14px;
+      margin-top: 14px;
+      text-align: center;
+      background: #ecfdf5;
+      padding: 10px 16px;
+      border-radius: var(--radius-sm);
+      border: 1px solid #a7f3d0;
+    }
+    .hint {
+      color: var(--gray-500);
+      font-size: 12px;
+      margin-top: 6px;
+      line-height: 1.4;
+    }
+  </style>
+</head>
+<body>
+  <header class="options-header">
+    <div class="logo-wrap" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/>
+        <rect x="8" y="2" width="8" height="4" rx="1" ry="1"/>
+        <path d="M9 12h6M9 16h6M9 8h2"/>
+      </svg>
+    </div>
+    <div>
+      <h1>录题页选择器配置</h1>
+      <p class="desc">在录题页面按 F12 检查元素，把题干、选项、答案、解析、提交按钮对应的 CSS 选择器填在下面（多个用英文逗号分隔，会按顺序尝试）。</p>
+    </div>
+  </header>
+  
+  <div class="form-group">
+    <label>录题页 URL 特征 
+      <input id="urlPattern" placeholder="当前标签页 URL 包含即视为录题页，如 chisheng、录题、exam" />
+    </label>
+    <div class="hint">插件会先检测当前页是否为录题页，检测到后再显示上传 Word 并自动填入。</div>
+  </div>
+
+  <div class="form-group">
+    <label>题干 <input id="question" placeholder="如 #questionText 或 input[name=content]" /></label>
+    <label>选项 A <input id="option_a" placeholder="如 #optionA" /></label>
+    <label>选项 B <input id="option_b" placeholder="如 #optionB" /></label>
+    <label>选项 C <input id="option_c" placeholder="如 #optionC" /></label>
+    <label>选项 D <input id="option_d" placeholder="如 #optionD" /></label>
+    <label>答案 <input id="answer" placeholder="如 #answer" /></label>
+    <label>解析 <input id="explanation" placeholder="如 #explanation" /></label>
+  </div>
+
+  <div class="form-group">
+    <label>保存/提交按钮 <input id="submit_btn" placeholder="如 保存、确定" /></label>
+    <label>下一题按钮 <input id="next_btn" placeholder="录题页「下一题」用于切到下一道题，可与提交为同一按钮" /></label>
+  </div>
+
+  <button id="save">保存设置</button>
+  <div id="saved" class="saved" style="display:none;">✅ 设置已成功保存</div>
+  <script src="options.js"></script>
+</body>
+</html>

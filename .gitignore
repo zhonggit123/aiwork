@@ -1,0 +1,6 @@
+config.yaml
+*.docx
+__pycache__/
+.venv/
+venv/
+.env

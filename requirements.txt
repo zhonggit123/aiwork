@@ -1,0 +1,20 @@
+# Word 解析
+python-docx>=1.1.0
+
+# 大模型 API（OpenAI 兼容，当前默认火山引擎豆包，也可接 通义/智谱/DeepSeek 等）
+openai>=1.0.0
+httpx>=0.25.0
+
+# 浏览器自动化（可选，用于“模拟人手填表”）
+playwright>=1.40.0
+
+# 配置文件
+pyyaml>=6.0
+
+# 可选：接口直连提交
+requests>=2.31.0
+
+# 可视化 Web 界面
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+python-multipart>=0.0.6
