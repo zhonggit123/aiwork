@@ -4,6 +4,54 @@ const onlyWhenDetected = document.getElementById("onlyWhenDetected");
 const whenNotDetected = document.getElementById("whenNotDetected");
 const statusBadge = document.getElementById("statusBadge");
 
+/** 设置检测结果为简单文案（进度/错误等） */
+function setDetectResultSimple(text, className) {
+  const wrap = document.getElementById("detect-result");
+  if (!wrap) return wrap;
+  const simple = wrap.querySelector(".detect-result-simple");
+  const structured = wrap.querySelector(".detect-result-structured");
+  if (simple) {
+    simple.textContent = text;
+    simple.className = "detect-result-simple message-area " + (className || "").trim();
+    simple.style.display = text ? "block" : "none";
+  }
+  if (structured) structured.style.display = "none";
+  wrap.style.display = text ? "block" : "none";
+  return wrap;
+}
+
+/** 设置检测结果为成功+已识别字段（字段列表默认折叠） */
+function setDetectResultSuccess(msg, fields) {
+  const wrap = document.getElementById("detect-result");
+  if (!wrap) return wrap;
+  const simple = wrap.querySelector(".detect-result-simple");
+  const structured = wrap.querySelector(".detect-result-structured");
+  const summary = wrap.querySelector(".detect-result-summary");
+  const detail = wrap.querySelector(".detect-result-detail");
+  const toggle = wrap.querySelector(".detect-result-toggle");
+  if (simple) simple.style.display = "none";
+  if (structured) structured.style.display = "block";
+  if (summary) {
+    summary.textContent = msg;
+    summary.className = "detect-result-summary message-area text-success";
+  }
+  const fieldList = (fields || []).map(f => (typeof f === "string" ? f : (f.label || f.role || ""))).filter(Boolean);
+  if (detail) {
+    detail.textContent = "已识别字段：" + fieldList.join("、");
+    detail.className = "detect-result-detail message-area text-success"; // 默认展开，分析完即见字段列表
+  }
+  if (toggle) {
+    toggle.setAttribute("aria-expanded", "true");
+    toggle.onclick = () => {
+      const expanded = toggle.getAttribute("aria-expanded") === "true";
+      toggle.setAttribute("aria-expanded", !expanded);
+      if (detail) detail.classList.toggle("collapsed", expanded);
+    };
+  }
+  wrap.style.display = "block";
+  return wrap;
+}
+
 async function isRecordPage(tab) {
   const { recordPagePattern } = await chrome.storage.sync.get("recordPagePattern");
   const custom = (recordPagePattern || "").trim().toLowerCase();
@@ -39,11 +87,8 @@ async function refreshMonitorState() {
     const hintEl = document.getElementById("uploadStepHint");
     const resultEl = document.getElementById("detect-result");
     if (selectors && Object.keys(selectors).filter(k => selectors[k]).length > 0) {
-      const fields = Object.keys(selectors).filter(k => selectors[k]).join("、");
-      resultEl.textContent = (lastDetectMessage || "已了解各题结构，允许上传 Word。")
-        + `（已识别字段：${fields}）`;
-      resultEl.className = "message-area text-success";
-      resultEl.style.display = "block";
+      const fieldKeys = Object.keys(selectors).filter(k => selectors[k]);
+      setDetectResultSuccess(lastDetectMessage || "已了解各题结构，允许上传 Word。", fieldKeys);
       
       const detectBtnIcon = document.querySelector("#detect .card-icon");
       const detectBtnTitle = document.querySelector("#detect .card-title");
@@ -71,18 +116,10 @@ async function refreshMonitorState() {
       }
       // 已分析状态下清除「请先分析页面」类错误横条
       setMsg("", false);
-      
-      // Clear result auto hiding logic for persistent info
-      setTimeout(() => {
-        if (resultEl && resultEl.style.display !== "none") {
-          resultEl.style.display = "none";
-        }
-      }, 5000);
+      // 不再自动隐藏检测结果，保留「已遍历…」「已识别字段」一直可见
 
     } else {
-      resultEl.textContent = "尚未分析当前页面，请点击上方「分析页面」按钮。";
-      resultEl.className = "message-area text-muted";
-      resultEl.style.display = "block";
+      setDetectResultSimple("尚未分析当前页面，请点击上方「分析页面」按钮。", "text-muted");
       
       const detectBtnIcon = document.querySelector("#detect .card-icon");
       const detectBtnTitle = document.querySelector("#detect .card-title");
@@ -150,8 +187,8 @@ restoreParseState();
   dropdown.addEventListener("click", (e) => e.stopPropagation());
 
   // ── 模型选择 ──────────────────────────────────────────────
-  const { selectedModel, parseDebugMode: savedDebug, defaultAudioUrl: savedAudio, defaultImageUrl: savedImage }
-    = await chrome.storage.sync.get(["selectedModel", "parseDebugMode", "defaultAudioUrl", "defaultImageUrl"]);
+  const { selectedModel, reasoningEffort: savedEffort, parseDebugMode: savedDebug, defaultAudioUrl: savedAudio, defaultImageUrl: savedImage }
+    = await chrome.storage.sync.get(["selectedModel", "reasoningEffort", "parseDebugMode", "defaultAudioUrl", "defaultImageUrl"]);
 
   const radios = document.querySelectorAll('input[name="modelChoice"]');
   const savedM = selectedModel || "doubao-seed-2-0-pro-260215";
@@ -161,6 +198,17 @@ restoreParseState();
       if (r.checked) chrome.storage.sync.set({ selectedModel: r.value });
     });
   });
+
+  // ── 思考程度（reasoning.effort）──────────────────────────────────────────
+  const effortEl = document.getElementById("reasoningEffort");
+  if (effortEl) {
+    const validEffort = ["minimal", "low", "medium", "high"];
+    const effort = validEffort.includes(savedEffort) ? savedEffort : "medium";
+    effortEl.value = effort;
+    effortEl.addEventListener("change", () => {
+      chrome.storage.sync.set({ reasoningEffort: effortEl.value });
+    });
+  }
 
   // ── 解析调试模式切换开关 ──────────────────────────────────
   const cbDebug      = document.getElementById("parseDebugMode");
@@ -216,12 +264,10 @@ chrome.runtime.onMessage.addListener((msg) => {
   const resultEl = document.getElementById("detect-result");
   if (resultEl) resultEl.style.display = "block";
   if (msg.type === "DETECT_PROGRESS") {
-    const resultEl = document.getElementById("detect-result");
-    if (!resultEl) return;
-    const fields = (msg.fields || []).join("、");
     const total = msg.total ? `/${msg.total}` : "";
-    resultEl.textContent = `正在遍历第 ${msg.walked}${total} 题，已识别字段：${fields || "检测中…"}`;
-    resultEl.className = "message-area text-muted";
+    const fields = (msg.fields || []).join("、");
+    setDetectResultSimple(`正在遍历第 ${msg.walked}${total} 题，已识别字段：${fields || "检测中…"}`, "text-muted");
+    if (!resultEl) return;
     
     const detectBtnIcon = document.querySelector("#detect .card-icon");
     if (detectBtnIcon && !detectBtnIcon.classList.contains("icon-spin")) {
@@ -288,8 +334,14 @@ function setMsg(text, isError) {
   if (text) {
     el.className = "message-area" + (isError ? " text-error" : " text-success");
     el.style.display = "block";
+    if (!isError && (text.includes("豆包识别") || text.includes("识别中"))) {
+      el.classList.add("msg-parsing");
+    } else {
+      el.classList.remove("msg-parsing");
+    }
   } else {
     el.style.display = "none";
+    el.classList.remove("msg-parsing");
   }
 
   // 仅在有错误/提示文案时显示复制按钮，并确保点击复制的是当前这段文案
@@ -331,9 +383,7 @@ document.getElementById("openOurUrl").addEventListener("click", () => {
 document.getElementById("detect").addEventListener("click", async () => {
   const resultEl = document.getElementById("detect-result");
   const detectEl = document.getElementById("detect");
-  resultEl.textContent = "正在检测页面结构，将自动切换下一题遍历各题…";
-  resultEl.className = "message-area text-muted";
-  resultEl.style.display = "block";
+  setDetectResultSimple("正在检测页面结构，将自动切换下一题遍历各题…", "text-muted");
 
   const detectBtnIcon = document.querySelector("#detect .card-icon");
   const detectBtnTitle = document.querySelector("#detect .card-title");
@@ -355,8 +405,7 @@ document.getElementById("detect").addEventListener("click", async () => {
 
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   if (!tab?.id) {
-    resultEl.textContent = "无法获取当前标签页";
-    resultEl.className = "message-area text-error";
+    setDetectResultSimple("无法获取当前标签页", "text-error");
     if (detectBtnIcon) {
       detectBtnIcon.classList.remove("icon-spin");
       detectBtnIcon.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>`;
@@ -375,12 +424,11 @@ document.getElementById("detect").addEventListener("click", async () => {
   try {
     await chrome.tabs.sendMessage(tab.id, { type: "PING" });
   } catch (pingErr) {
-    resultEl.textContent = "无法连接录题页，请确保当前标签页是录题页并刷新该页后再点「开始检测」。";
-    resultEl.classList.add("text-error");
+    setDetectResultSimple("无法连接录题页，请确保当前标签页是录题页并刷新该页后再点「开始检测」。", "text-error");
     if (detectEl) detectEl.classList.remove("is-analyzing");
     return;
   }
-  resultEl.textContent = "正在遍历各题（约 10～30 秒），请勿关闭本弹窗…";
+  setDetectResultSimple("正在遍历各题（约 10～30 秒），请勿关闭本弹窗…", "text-muted");
   const { selectors: stored } = await chrome.storage.sync.get("selectors");
   try {
     const res = await chrome.tabs.sendMessage(tab.id, { type: "DETECT_AND_WALK", selectors: stored || {} });
@@ -388,8 +436,7 @@ document.getElementById("detect").addEventListener("click", async () => {
     if (detectBtnIcon) detectBtnIcon.classList.remove("icon-spin");
 
     if (!res || !res.ok) {
-      resultEl.textContent = res?.error || "分析失败，请确认在录题页面";
-      resultEl.className = "message-area text-error";
+      setDetectResultSimple(res?.error || "分析失败，请确认在录题页面", "text-error");
       if (detectBtnIcon) {
         detectBtnIcon.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>`;
         detectBtnIcon.style.color = "";
@@ -420,9 +467,7 @@ document.getElementById("detect").addEventListener("click", async () => {
         chrome.runtime.sendMessage({ type: "REFRESH_BADGE", tabId: tab.id }).catch(() => {});
       }
     }
-    resultEl.textContent = msg + `（已识别字段：${(fields || []).map(f => f.label || f.role).join("、")}）`;
-    resultEl.className = "message-area text-success";
-    resultEl.style.display = "block";
+    setDetectResultSuccess(msg, fields || []);
     
     // 更新按钮状态为已识别
     if (detectEl) detectEl.classList.remove("is-analyzing");
@@ -445,8 +490,7 @@ document.getElementById("detect").addEventListener("click", async () => {
       hintEl.style.color = "var(--brand-green)";
       hintEl.style.fontWeight = "500";
     }
-
-    setTimeout(() => { resultEl.style.display = "none"; }, 5000);
+    // 分析完成后保留检测结果可见，不自动隐藏
   } catch (e) {
     const errMsg = String(e?.message || e);
     if (detectEl) detectEl.classList.remove("is-analyzing");
@@ -463,11 +507,10 @@ document.getElementById("detect").addEventListener("click", async () => {
     if (detectBtnDesc) detectBtnDesc.textContent = "识别当前表单";
 
     if (/receiving end|establish connection|target closed/i.test(errMsg)) {
-      resultEl.textContent = "连接中断（检测时间较长时请勿关闭弹窗），请刷新录题页后重新点「开始检测」。";
+      setDetectResultSimple("连接中断（检测时间较长时请勿关闭弹窗），请刷新录题页后重新点「开始检测」。", "text-error");
     } else {
-      resultEl.textContent = "注入失败：" + (errMsg || "请刷新录题页面后再试");
+      setDetectResultSimple("注入失败：" + (errMsg || "请刷新录题页面后再试"), "text-error");
     }
-    resultEl.className = "message-area text-error";
   }
 });
 
@@ -477,6 +520,24 @@ function getWordFiles(files) {
     const n = (f.name || "").toLowerCase();
     return n.endsWith(".docx") || n.endsWith(".doc");
   });
+}
+
+/** 从 drop 事件的 dataTransfer 取文件（弹窗内 dataTransfer.files 常为空，用 items 兜底） */
+function getFilesFromDrop(dataTransfer) {
+  if (!dataTransfer) return [];
+  const fromFiles = dataTransfer.files && dataTransfer.files.length > 0
+    ? Array.from(dataTransfer.files) : [];
+  if (fromFiles.length > 0) return fromFiles;
+  if (!dataTransfer.items || !dataTransfer.items.length) return [];
+  const fromItems = [];
+  for (let i = 0; i < dataTransfer.items.length; i++) {
+    const item = dataTransfer.items[i];
+    if (item.kind === "file") {
+      const f = item.getAsFile();
+      if (f) fromItems.push(f);
+    }
+  }
+  return fromItems;
 }
 
 // ─── 记录发起上传时的录题页 tabId（避免解析期间切标签导致填充到错误页）
@@ -576,6 +637,8 @@ async function pushJsonHistory(jsonText, debugInfo) {
   await chrome.storage.local.set({ jsonHistory: nextList });
 }
 
+let _parsingDotsTimer = null;
+
 function setDropZoneState(state, data = {}) {
   const dz       = document.getElementById("dropZone");
   const dzN      = document.getElementById("dzNormal");
@@ -586,6 +649,14 @@ function setDropZoneState(state, data = {}) {
   // 如果关键元素不在 DOM（弹窗在非录题页打开），静默跳过
   if (!dz || !dzN || !dzP || !dzD || !upBtn) return;
 
+  // 停止「识别中. / .. / ...」循环
+  if (_parsingDotsTimer) {
+    clearInterval(_parsingDotsTimer);
+    _parsingDotsTimer = null;
+  }
+  const upIcon = upBtn.querySelector(".card-icon");
+  if (upIcon) upIcon.classList.remove("card-icon--parsing");
+
   // 重置所有子层
   dzN.classList.add("hidden");
   dzP.classList.add("hidden");
@@ -595,9 +666,9 @@ function setDropZoneState(state, data = {}) {
   if (state === "idle") {
     dzN.classList.remove("hidden");
     dzN.querySelector(".drop-icon").innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>`;
-    dzN.querySelector(".drop-text").textContent = "点击或拖拽 Word 文件";
+    dzN.querySelector(".drop-text").textContent = "点击选择 Word 文件";
     dzN.querySelector(".drop-subtext").textContent = "支持 .docx 格式，可多选";
-    upBtn.style.opacity = "1";
+    upBtn.classList.remove("is-parsing");
     upBtn.style.pointerEvents = "auto";
     const upTitle = upBtn.querySelector(".card-title");
     if (upTitle) upTitle.textContent = "解析并填入";
@@ -611,7 +682,7 @@ function setDropZoneState(state, data = {}) {
       names.length === 1 ? names[0] : `${names.length} 个文件`;
     dzN.querySelector(".drop-subtext").textContent =
       names.length > 1 ? names.join("、").slice(0, 50) : "点击下方「解析并填入」开始";
-    upBtn.style.opacity = "1";
+    upBtn.classList.remove("is-parsing");
     upBtn.style.pointerEvents = "auto";
     const upTitle = upBtn.querySelector(".card-title");
     if (upTitle) upTitle.textContent = "解析并填入";
@@ -619,10 +690,21 @@ function setDropZoneState(state, data = {}) {
   } else if (state === "parsing") {
     dzP.classList.remove("hidden");
     dz.classList.add("is-parsing");
-    upBtn.style.opacity = "0.6";
+    upBtn.classList.add("is-parsing");
     upBtn.style.pointerEvents = "none";
+    if (upIcon) upIcon.classList.add("card-icon--parsing");
     const upTitle = upBtn.querySelector(".card-title");
-    if (upTitle) upTitle.textContent = "识别中...";
+    const dzParsingText = dzP.querySelector(".drop-text");
+    const dots = [".", "..", "..."];
+    let dotCount = 2; // 先显示 "."，再 ".."，再 "..."
+    const tick = () => {
+      dotCount = (dotCount + 1) % 3;
+      const d = dots[dotCount];
+      if (upTitle) upTitle.textContent = "识别中" + d;
+      if (dzParsingText) dzParsingText.textContent = "正在 AI 识别中" + d;
+    };
+    tick();
+    _parsingDotsTimer = setInterval(tick, 420);
     const subEl = document.getElementById("dzParsingSubtext");
     if (subEl) subEl.textContent = "已等待 0 秒 · 关闭弹窗不会中断";
   } else if (state === "done") {
@@ -639,6 +721,7 @@ function setDropZoneState(state, data = {}) {
       return `<div class="result-item">[${t}] ${txt}</div>`;
     }).join("") + (qs.length > 3 ? `<div class="result-more">…还有 ${qs.length - 3} 题</div>` : "");
     document.getElementById("resultsPreview").innerHTML = preview;
+    upBtn.classList.remove("is-parsing");
     // 页面题数与识别题数不一致时提示
     const mismatchEl = document.getElementById("resultsMismatch");
     if (mismatchEl) {
@@ -868,9 +951,9 @@ async function doFill(questions) {
   }
 
   const { selectors, pageQuestionTotal, pageSlots, defaultAudioUrl, defaultImageUrl } = await chrome.storage.sync.get(["selectors", "pageQuestionTotal", "pageSlots", "defaultAudioUrl", "defaultImageUrl"]);
-  // 检查是否已做过页面检测
+  // 检查是否已做过页面检测（上方 detect-result 已有「尚未分析…」提示，不再重复红色条）
   if (!selectors || !Object.values(selectors).some(Boolean)) {
-    setMsg("请先点击上方「分析页面」提取题库结构", true);
+    setMsg("", false);
     return;
   }
 
@@ -945,7 +1028,7 @@ async function doUploadAndFill(filesToUse) {
   const { selectors } = await chrome.storage.sync.get("selectors");
   const hasStructure = selectors && Object.values(selectors).some(Boolean);
   if (!hasStructure) {
-    setMsg("请先点击「分析页面」提取题库结构，再解析 Word", true);
+    setMsg("", false);
     return;
   }
 
@@ -1001,7 +1084,7 @@ document.getElementById("uploadAndFill").addEventListener("click", async () => {
   const { selectors } = await chrome.storage.sync.get("selectors");
   const hasStructure = selectors && Object.values(selectors).some(Boolean);
   if (!hasStructure) {
-    setMsg("请先点击上方「分析页面」提取题库结构，再解析 Word", true);
+    setMsg("", false);
     const btnDetect = document.getElementById("detect");
     if (btnDetect) {
       btnDetect.style.transform = "scale(1.02)";
@@ -1039,11 +1122,11 @@ if (dropZone) {
     if (dropZone.classList.contains("is-parsing")) return;
     if (e.target.closest("button") || e.target.closest(".results-actions") || e.target.closest(".btn-row")) return;
 
-    // 先检查是否已经分析过页面结构
+    // 先检查是否已经分析过页面结构（上方已有「尚未分析…」提示，仅高亮按钮）
     const { selectors } = await chrome.storage.sync.get("selectors");
     const hasStructure = selectors && Object.values(selectors).some(Boolean);
     if (!hasStructure) {
-      setMsg("请先点击上方「分析页面」提取题库结构", true);
+      setMsg("", false);
       const btnDetect = document.getElementById("detect");
       if (btnDetect) {
         btnDetect.style.transform = "scale(1.02)";
@@ -1059,16 +1142,27 @@ if (dropZone) {
     document.getElementById("wordFiles").click();
   });
 
+  // 必须 dragenter + dragover 都 preventDefault 并设置 dropEffect，弹窗内拖拽文件才能生效
+  dropZone.addEventListener("dragenter", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
+    if (!dropZone.classList.contains("is-parsing")) dropZone.classList.add("drag-over");
+  }, { capture: true });
   dropZone.addEventListener("dragover", (e) => {
     e.preventDefault();
     e.stopPropagation();
-    if (!dropZone.classList.contains("is-parsing")) {
-      dropZone.classList.add("drag-over");
-    }
-  });
+    if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
+    if (!dropZone.classList.contains("is-parsing")) dropZone.classList.add("drag-over");
+  }, { capture: true });
   dropZone.addEventListener("dragleave", (e) => {
     e.preventDefault();
-    dropZone.classList.remove("drag-over");
+    // 若进入子元素会误触发 dragleave，仅当真正离开 dropZone 时移除样式
+    const rect = dropZone.getBoundingClientRect();
+    const x = e.clientX, y = e.clientY;
+    if (x <= rect.left || x >= rect.right || y <= rect.top || y >= rect.bottom) {
+      dropZone.classList.remove("drag-over");
+    }
   });
   dropZone.addEventListener("drop", async (e) => {
     e.preventDefault();
@@ -1076,11 +1170,11 @@ if (dropZone) {
     dropZone.classList.remove("drag-over");
     if (dropZone.classList.contains("is-parsing")) return; // 识别中禁止拖入
 
-    // 先检查是否已经分析过页面结构
+    // 先检查是否已经分析过页面结构（上方已有「尚未分析…」提示，仅高亮按钮）
     const { selectors } = await chrome.storage.sync.get("selectors");
     const hasStructure = selectors && Object.values(selectors).some(Boolean);
     if (!hasStructure) {
-      setMsg("请先点击上方「分析页面」提取题库结构", true);
+      setMsg("", false);
       const btnDetect = document.getElementById("detect");
       if (btnDetect) {
         btnDetect.style.transform = "scale(1.02)";
@@ -1093,12 +1187,19 @@ if (dropZone) {
       return;
     }
 
-    const list = getWordFiles(e.dataTransfer.files);
+    const rawFiles = getFilesFromDrop(e.dataTransfer);
+    const list = getWordFiles(rawFiles);
     if (list.length) {
       setDropZoneState("selected", { files: list });
       doUploadAndFill(list);
+    } else if (rawFiles.length > 0) {
+      setMsg("请选择 .docx 或 .doc 文件", true);
+    } else {
+      // 弹窗不支持拖拽，帮用户打开文件选择
+      setMsg("请在下方的文件选择窗口中选择 .docx 文件", false);
+      document.getElementById("wordFiles").click();
     }
-  });
+  }, { capture: true });
 }
 
 document.getElementById("wordFiles").addEventListener("change", function () {
@@ -1491,7 +1592,7 @@ async function generateAiTemplate() {
     JSON.stringify([jsonTemplate], null, 2),
     "",
     "注意事项：",
-    "- 题干、选项保留原文，不要添加「A.」「选项A：」等前缀",
+    "- 题干、选项保留原文，不要添加「A.」「选项A：」等前缀；题干内容若开头是题号（如 1. 2. 一、(1) 等）请去掉题号只保留正文",
     "- answer 字段只填字母（A/B/C/D），不含选项内容",
     "- 没有的字段填空字符串 \"\"，不要省略字段名",
     "- 如果有多道题，输出多个对象",
@@ -1564,14 +1665,11 @@ if (detectBtn) {
   detectBtn.addEventListener("click", async () => {
     const resultEl = document.getElementById("detect-result");
     const detectEl = document.getElementById("detect");
-    resultEl.style.display = "block";
-    resultEl.textContent = "正在分析页面结构，请稍候...";
-    resultEl.className = "message-area text-muted";
+    setDetectResultSimple("正在分析页面结构，请稍候...", "text-muted");
 
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     if (!tab?.id) {
-      resultEl.textContent = "无法获取当前标签页";
-      resultEl.className = "message-area text-error";
+      setDetectResultSimple("无法获取当前标签页", "text-error");
       return;
     }
 
@@ -1596,8 +1694,7 @@ if (detectBtn) {
     try {
       await chrome.tabs.sendMessage(tab.id, { type: "PING" });
     } catch (e) {
-      resultEl.textContent = "未连接页面，请刷新录题页后重试";
-      resultEl.className = "message-area text-error";
+      setDetectResultSimple("未连接页面，请刷新录题页后重试", "text-error");
       if (detectBtnIcon) {
         detectBtnIcon.classList.remove("icon-spin");
         detectBtnIcon.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>`;
@@ -1618,8 +1715,7 @@ if (detectBtn) {
       const res = await chrome.tabs.sendMessage(tab.id, { type: "DETECT_AND_WALK", selectors: stored || {} });
 
       if (!res || !res.ok) {
-        resultEl.textContent = res?.error || "分析失败，请确认在录题页面";
-        resultEl.className = "message-area text-error";
+        setDetectResultSimple(res?.error || "分析失败，请确认在录题页面", "text-error");
         if (detectBtnIcon) {
           detectBtnIcon.classList.remove("icon-spin");
           detectBtnIcon.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>`;
@@ -1646,9 +1742,9 @@ if (detectBtn) {
       pageSlots: slots && slots.length > 0 ? slots : null,
     });
 
-      resultEl.textContent = `成功分析 ${walked} 题，已识别字段：${(fields || []).map(f => f.label || f.role).join("、")}`;
-      resultEl.className = "message-area text-success";
-      resultEl.style.display = "block";
+      const totalN = total != null && total > 0 ? `/${total}` : "";
+      const msg = message || `成功分析 ${walked}${totalN} 题，了解页面结构，允许上传 Word。`;
+      setDetectResultSuccess(msg, fields || []);
       
       // 更新按钮状态为已识别
       if (detectEl) detectEl.classList.remove("is-analyzing");
@@ -1673,7 +1769,7 @@ if (detectBtn) {
         hintEl.style.fontWeight = "500";
       }
 
-      setTimeout(() => { resultEl.style.display = "none"; }, 5000);
+      // 分析完成后保留检测结果可见，不自动隐藏
     } catch (e) {
       if (detectBtnIcon) {
         detectBtnIcon.classList.remove("icon-spin");
@@ -1688,8 +1784,7 @@ if (detectBtn) {
       if (detectBtnDesc) detectBtnDesc.textContent = "识别当前表单";
       if (detectEl) detectEl.classList.remove("is-analyzing");
       
-      resultEl.textContent = "分析中断：" + e.message;
-      resultEl.className = "message-area text-error";
+      setDetectResultSimple("分析中断：" + e.message, "text-error");
     }
   });
 }

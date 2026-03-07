@@ -356,8 +356,8 @@ async function handleParse(filesData) {
       formData.append("files", blob, f.name);
     }
 
-    const { fields, pageQuestionTotal, pageSlots, parseDebugMode, selectedModel } = await chrome.storage.sync.get([
-      "fields", "pageQuestionTotal", "pageSlots", "parseDebugMode", "selectedModel",
+    const { fields, pageQuestionTotal, pageSlots, parseDebugMode, selectedModel, reasoningEffort } = await chrome.storage.sync.get([
+      "fields", "pageQuestionTotal", "pageSlots", "parseDebugMode", "selectedModel", "reasoningEffort",
     ]);
     if (fields && fields.length > 0) {
       formData.append("field_structure", JSON.stringify(fields));
@@ -387,6 +387,8 @@ async function handleParse(filesData) {
       ? selectedModel
       : "doubao-seed-2-0-pro-260215";
     formData.append("model_override", modelToUse);
+    const effort = ["minimal", "low", "medium", "high"].includes(reasoningEffort) ? reasoningEffort : "medium";
+    formData.append("reasoning_effort", effort);
 
     const r = await fetch(BACKEND + "/api/parse-multiple", {
       method: "POST",

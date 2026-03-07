@@ -38,6 +38,18 @@
         </label>
       </div>
 
+      <!-- 思考程度 -->
+      <div class="settings-section">
+        <div class="settings-section-title">思考程度</div>
+        <select id="reasoningEffort" class="settings-select" title="通过 reasoning.effort 调节思考长度">
+          <option value="minimal">minimal — 关闭思考，直接回答</option>
+          <option value="low">low — 轻量思考，侧重快速响应</option>
+          <option value="medium" selected>medium — 均衡（默认）</option>
+          <option value="high">high — 深度分析，处理复杂问题</option>
+        </select>
+        <div class="settings-hint">平衡效果、时延与成本</div>
+      </div>
+
       <div class="settings-divider"></div>
 
       <!-- 功能开关 -->
@@ -102,9 +114,19 @@
         <span class="card-watermark" aria-hidden="true">1</span>
       </div>
 
-      <div id="detect-result" class="message-area" style="display:none; margin-bottom:12px;"></div>
+      <div id="detect-result" class="detect-result-wrap" style="display:none; margin-bottom:12px;">
+        <div class="detect-result-simple message-area"></div>
+        <div class="detect-result-structured" style="display:none;">
+          <div class="detect-result-summary message-area text-success"></div>
+          <button type="button" class="detect-result-toggle" aria-expanded="false" title="展开/折叠已识别字段">
+            <span class="detect-result-toggle-text">已识别字段</span>
+            <svg class="detect-result-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+          </button>
+          <div class="detect-result-detail message-area text-success"></div>
+        </div>
+      </div>
 
-      <!-- 拖拽上传 -->
+      <!-- 选择 Word 文件上传 -->
       <div class="drop-zone" id="dropZone">
           <!-- 默认/已选文件 -->
           <div id="dzNormal">
@@ -117,7 +139,7 @@
                 <polyline points="10 9 9 9 8 9"/>
               </svg>
             </div>
-            <div class="drop-text">点击或拖拽 Word 文件</div>
+            <div class="drop-text">点击选择 Word 文件</div>
             <div class="drop-subtext">支持 .docx 格式，可多选</div>
             <div id="uploadStepHint" class="drop-subtext" style="font-size:11px; margin-top:6px; opacity:0.8;"></div>
           </div>
@@ -209,7 +231,7 @@
         题库录入 AI
         <span id="statusBadge" class="status-dot"></span>
       </div>
-      <div class="footer-subtitle">研发辅助扩展 v1.2</div>
+      <div class="footer-subtitle">研发辅助扩展 v3.0</div>
     </div>
     <div class="footer-actions">
       <div id="jsonHistoryWrap" class="footer-history-wrap">

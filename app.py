@@ -143,6 +143,7 @@ async def parse_word_multiple(
     expected_total: str | None = Form(None, description="录题页题目数量，用于约束大模型只提取对应题数"),
     page_structure: str | None = Form(None, description="录题页每题的题型/小题数等，JSON 数组，便于大模型精确对应"),
     model_override: str | None = Form(None, description="覆盖配置中的模型名，如 doubao-seed-2-0-pro-260215"),
+    reasoning_effort: str | None = Form(None, description="思考程度：minimal/low/medium/high，默认 medium"),
     debug: str | None = Form(None, description="传 1 或 true 时返回 debug_info（原文+prompt），便于调试"),
 ):
     """上传多个 Word，智能识别文件类型并合并解析。
@@ -197,13 +198,17 @@ async def parse_word_multiple(
 
     config = get_config()
     llm = config.get("llm", {})
+    effort = (reasoning_effort or "").strip().lower() if reasoning_effort else "medium"
+    if effort not in ("minimal", "low", "medium", "high"):
+        effort = "medium"
     llm_params = {
         "base_url": llm.get("base_url", "https://api.openai.com/v1"),
         "api_key": llm.get("api_key", ""),
         "model": (model_override.strip() if model_override and model_override.strip() else None)
                  or llm.get("model", "gpt-4o-mini"),
+        "reasoning_effort": effort,
     }
-    print(f"[parse-multiple] 使用模型: {llm_params['model']}")
+    print(f"[parse-multiple] 使用模型: {llm_params['model']}, 思考程度: {effort}")
 
     # 1. 读取所有文件内容
     filenames = [f.filename for f in valid]
