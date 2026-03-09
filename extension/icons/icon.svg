@@ -1,15 +1,10 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
-  <defs>
-    <linearGradient id="grad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#10b981" />
-      <stop offset="100%" stop-color="#059669" />
-    </linearGradient>
-    <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%">
-      <feDropShadow dx="0" dy="4" stdDeviation="6" flood-opacity="0.2" />
-    </filter>
-  </defs>
-  <rect width="128" height="128" rx="28" fill="url(#grad)" filter="url(#shadow)" />
-  <g transform="translate(32, 32)">
-    <path d="M12,48 L32,68 L64,12" fill="none" stroke="#ffffff" stroke-width="12" stroke-linecap="round" stroke-linejoin="round" />
+  <!-- 深色背景（插件图标） -->
+  <rect width="128" height="128" rx="24" fill="#1e2429"/>
+  <!-- 三弧：自底部中心向上张开，白色 -->
+  <g fill="none" stroke="#ffffff" stroke-width="6" stroke-linecap="round">
+    <path d="M 56 108 A 8 8 0 0 1 72 108"/>
+    <path d="M 48 108 A 16 16 0 0 1 80 108"/>
+    <path d="M 40 108 A 24 24 0 0 1 88 108"/>
   </g>
 </svg>
