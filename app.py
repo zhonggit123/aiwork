@@ -3,10 +3,18 @@
 可视化 Web 服务：上传 Word → AI 解析 → 表格展示/编辑 → 一键提交。
 启动：uvicorn app:app --reload --host 0.0.0.0 --port 8765
 """
+import sys
 import tempfile
 from pathlib import Path
 
 import yaml
+
+# 打包成 exe 时：配置从 exe 同目录读取，静态资源从打包目录读取
+if getattr(sys, "frozen", False):
+    _BASE_DIR = Path(sys.executable).parent
+    _RESOURCE_DIR = Path(sys._MEIPASS)
+else:
+    _BASE_DIR = _RESOURCE_DIR = Path(__file__).parent
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse
@@ -40,9 +48,9 @@ _CONFIG = None
 def get_config() -> dict:
     global _CONFIG
     if _CONFIG is None:
-        path = Path(__file__).parent / "config.yaml"
+        path = _BASE_DIR / "config.yaml"
         if not path.exists():
-            raise FileNotFoundError("请复制 config.example.yaml 为 config.yaml 并填写")
+            raise FileNotFoundError("请复制 config.example.yaml 为 config.yaml 并填写（与 exe 同目录）")
         with open(path, "r", encoding="utf-8") as f:
             _CONFIG = yaml.safe_load(f)
     return _CONFIG
@@ -123,7 +131,7 @@ async def parse_word(file: UploadFile = File(...)):
 @app.post("/api/debug-page-html")
 async def save_debug_page_html(body: DebugPageHtmlBody):
     """插件一键保存：把当前题目区域 HTML 写入项目 samples/ 目录，无需复制粘贴，AI 可直接读取。"""
-    samples_dir = Path(__file__).parent / "samples"
+    samples_dir = _RESOURCE_DIR / "samples"
     samples_dir.mkdir(exist_ok=True)
     # 只允许写入 .html 文件名，避免路径穿越
     name = (body.filename or "last-question.html").strip()
@@ -230,15 +238,33 @@ async def parse_word_multiple(
     # 2. 分类文件
     exam_files = [f for f in files_data if f["file_type"] == "exam"]
     answer_files = [f for f in files_data if f["file_type"] == "answer_material"]
+    combined_files = [f for f in files_data if f["file_type"] == "combined"]
     
-    print(f"[parse-multiple] 试题文件: {len(exam_files)} 个, 答案材料: {len(answer_files)} 个")
+    print(f"[parse-multiple] 试题文件: {len(exam_files)} 个, 答案材料: {len(answer_files)} 个, 题答合并: {len(combined_files)} 个")
 
     want_debug = (debug or "").strip().lower() in ("1", "true", "yes")
     debug_info = None
 
     try:
         # 3. 根据文件组合选择解析策略
-        if len(exam_files) == 1 and len(answer_files) == 1:
+        if len(combined_files) >= 1 and len(exam_files) == 0 and len(answer_files) == 0:
+            # 情况 AA：题目+答案+听力材料全在同一文件（内嵌答案格式如 (C)1.A. B. C.）
+            print("[parse-multiple] 策略: 题答合并文件解析（内嵌答案）")
+            # 多个 combined 文件时合并文本
+            combined_text = "\n\n---\n\n".join(f["text"] for f in combined_files)
+            out = await parse_single_file(
+                combined_text,
+                field_structure=parsed_field_structure,
+                paper_metadata=paper_metadata,
+                return_debug=want_debug,
+                **llm_params,
+            )
+            if want_debug:
+                questions, debug_info = out
+            else:
+                questions = out
+
+        elif len(exam_files) == 1 and len(answer_files) == 1:
             # 情况 A：一个试题 + 一个答案材料 → 合并解析
             print("[parse-multiple] 策略: 试题+答案材料合并解析")
             out = await parse_exam_with_answers(
@@ -302,8 +328,8 @@ async def parse_word_multiple(
         else:
             # 情况 E：多个文件，复杂情况 → 合并所有文本一起解析
             print("[parse-multiple] 策略: 多文件合并解析")
-            # 优先用试题文件，再加答案材料
-            all_texts = [f["text"] for f in exam_files] + [f["text"] for f in answer_files]
+            # 优先用试题文件，再加答案材料，combined 文件也包含进来
+            all_texts = [f["text"] for f in exam_files] + [f["text"] for f in answer_files] + [f["text"] for f in combined_files]
             if not all_texts:
                 all_texts = [f["text"] for f in files_data]
 
@@ -375,7 +401,7 @@ async def api_config():
 
 
 # 前端单页
-STATIC_DIR = Path(__file__).parent / "static"
+STATIC_DIR = _RESOURCE_DIR / "static"
 
 
 @app.get("/", response_class=HTMLResponse)

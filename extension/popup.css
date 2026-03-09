@@ -385,10 +385,40 @@ main {
   color: #ffffff;
 }
 
+/* 分析页面卡片：默认与已分析状态背景优化（更柔和、已分析带轻微绿色） */
+#detect {
+  background: linear-gradient(152deg, #252c33 0%, #1e2429 100%);
+  color: #ffffff;
+}
+#detect:hover {
+  background: linear-gradient(152deg, #2d3540 0%, #252b31 100%);
+}
+#detect.is-analyzed {
+  background: linear-gradient(152deg, #1e2d28 0%, #1a2522 100%);
+  box-shadow: 0 2px 12px rgba(16, 185, 129, 0.08);
+}
+#detect.is-analyzed:hover {
+  background: linear-gradient(152deg, #243530 0%, #1e2a26 100%);
+}
+#detect .card-icon {
+  background: transparent;
+}
+#detect.is-analyzed .card-icon {
+  border-radius: 8px;
+}
+
 .grid-card.dark:hover {
   background: var(--primary-hover);
   transform: translateY(-2px);
   box-shadow: 0 6px 16px rgba(26, 30, 43, 0.15);
+}
+#detect:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.12);
+}
+#detect.is-analyzed:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(16, 185, 129, 0.12);
 }
 
 /* 全宽紧凑行卡片（解析并填入 / 分析页面） */
@@ -499,6 +529,20 @@ main {
   animation: card-analyzing 1.6s ease-in-out infinite;
 }
 
+/* 分析中：放大镜「查找」动效（轻微缩放 + 位移，像在找东西） */
+@keyframes card-icon-magnifier-search {
+  0%, 100% { transform: scale(1) translate(0, 0); opacity: 1; }
+  25% { transform: scale(1.06) translate(1px, -1px); opacity: 0.9; }
+  50% { transform: scale(1.1) translate(-1px, 1px); opacity: 1; }
+  75% { transform: scale(1.04) translate(0.5px, 0.5px); opacity: 0.95; }
+}
+#detect.is-analyzing .card-icon.card-icon--searching {
+  animation: card-icon-magnifier-search 1.4s ease-in-out infinite;
+}
+#detect.is-analyzing .card-icon.card-icon--searching svg {
+  display: block;
+}
+
 /* 第二步执行中：「解析并填入」卡片识别中呼吸动画 */
 @keyframes card-parsing-breathe {
   0%, 100% { opacity: 0.85; box-shadow: 0 4px 12px -2px rgb(17 24 39 / 0.06), 0 0 0 0 rgba(16, 185, 129, 0.3); }
@@ -507,16 +551,20 @@ main {
 #uploadAndFill.is-parsing {
   animation: card-parsing-breathe 2s ease-in-out infinite;
 }
+#uploadAndFill.is-parsing .card-title {
+  color: var(--brand-green);
+}
 
-/* 识别中：闪电图标动效（闪动） */
+/* 识别中：闪电图标动效（闪动，呼吸幅度较大） */
 @keyframes card-icon-lightning {
   0%, 100% { opacity: 1; transform: scale(1); filter: brightness(1); }
-  25% { opacity: 0.75; transform: scale(1.08); filter: brightness(1.3); }
+  25% { opacity: 0.6; transform: scale(1.2); filter: brightness(1.5); }
   50% { opacity: 1; transform: scale(1); filter: brightness(1); }
-  75% { opacity: 0.85; transform: scale(1.05); filter: brightness(1.15); }
+  75% { opacity: 0.75; transform: scale(1.12); filter: brightness(1.3); }
 }
 #uploadAndFill.is-parsing .card-icon.card-icon--parsing {
   animation: card-icon-lightning 1.2s ease-in-out infinite;
+  color: var(--brand-green);
 }
 #uploadAndFill.is-parsing .card-icon.card-icon--parsing svg {
   display: block;
@@ -654,7 +702,7 @@ main {
   0%   { transform: rotate(0deg); }
   100% { transform: rotate(360deg); }
 }
-/* 加载中：去掉 pill 背景，只旋转 svg */
+/* 加载中：去掉 pill 背景，只旋转 svg；识别中时用绿色 */
 .drop-icon-spin {
   animation: dz-spin 1s linear infinite;
   background: none !important;
@@ -663,6 +711,9 @@ main {
   width: auto !important;
   height: auto !important;
   margin-bottom: 10px !important;
+}
+.drop-zone.is-parsing .drop-icon-spin {
+  color: var(--brand-green) !important;
 }
 
 /* Buttons */
@@ -956,6 +1007,10 @@ footer {
   color: var(--primary);
   background: var(--gray-100);
 }
+.json-history-item-fill:hover {
+  color: var(--brand-green);
+  background: rgba(16, 185, 129, 0.1);
+}
 
 /* Advanced / JSON Area */
 textarea {
@@ -1057,6 +1112,7 @@ input[type="text"]:focus {
   max-height: 120px;
   overflow-y: auto;
   transition: max-height 0.2s ease;
+  white-space: pre-line; /* 题型与结构多行：第1题…\n第2题… */
 }
 .detect-result-detail.collapsed {
   max-height: 0;
@@ -1121,6 +1177,15 @@ input[type="text"]:focus {
 .btn-copy-list:hover {
   background: var(--gray-50);
   border-color: var(--gray-300);
+}
+.btn-fill-result {
+  color: #fff;
+  background: var(--brand-green);
+  border-color: var(--brand-green);
+}
+.btn-fill-result:hover {
+  background: var(--brand-green-dark);
+  border-color: var(--brand-green-dark);
 }
 .btn-reset {
   width: 100%;

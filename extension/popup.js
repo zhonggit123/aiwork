@@ -4,6 +4,43 @@ const onlyWhenDetected = document.getElementById("onlyWhenDetected");
 const whenNotDetected = document.getElementById("whenNotDetected");
 const statusBadge = document.getElementById("statusBadge");
 
+/** 分析页面卡片图标：放大镜（默认与已分析态） */
+const DETECT_ICON_MAGNIFIER = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>`;
+
+/**
+ * 根据已识别字段列表生成「题型与结构」的友好描述，用于遍历进度展示（识别中）。
+ * @param {string[]} fields - 字段名数组（如 audio_url, option_a, blank_audio_1 ...）
+ * @returns {string} 简短描述，如「听力填空 · 5 个空 · 四选一 · 含答案与解析」
+ */
+function describeStructureFromFields(fields) {
+  if (!Array.isArray(fields) || fields.length === 0) return "正在识别题型与结构…";
+  const set = new Set(fields);
+
+  const has = (name) => set.has(name);
+  const countBlanks = (key) => {
+    let n = 0;
+    for (const f of fields) if (f && typeof f === "string" && f.startsWith(key)) n = Math.max(n, parseInt(f.replace(/\D/g, ""), 10) || 1);
+    return n;
+  };
+
+  const parts = [];
+  const hasListening = has("audio_url") || has("audio_file") || has("listening_script");
+  const blankCount = Math.max(countBlanks("blank_audio_"), countBlanks("blank_script_"), countBlanks("blank_question_"));
+  if (blankCount > 0) {
+    parts.push(hasListening ? "听力填空" : "填空");
+    parts.push(`${blankCount} 个空`);
+  } else if (hasListening) parts.push("听力题");
+  if (has("question") || has("keyword")) { if (parts.length === 0) parts.push("题干与关键词"); }
+
+  const opts = [has("option_a"), has("option_b"), has("option_c"), has("option_d")].filter(Boolean).length;
+  if (opts === 4) parts.push("四选一"); else if (opts === 3) parts.push("三选一"); else if (opts >= 1) parts.push(`${opts} 个选项`);
+  if (has("answer")) parts.push("含答案");
+  if (has("explanation")) parts.push("含解析");
+  if (["grade", "course", "unit", "difficulty", "knowledge_point"].some(has)) parts.push("含元信息");
+
+  return parts.length > 0 ? parts.join(" · ") : "正在识别题型与结构…";
+}
+
 /** 设置检测结果为简单文案（进度/错误等） */
 function setDetectResultSimple(text, className) {
   const wrap = document.getElementById("detect-result");
@@ -20,8 +57,14 @@ function setDetectResultSimple(text, className) {
   return wrap;
 }
 
-/** 设置检测结果为成功+已识别字段（字段列表默认折叠） */
-function setDetectResultSuccess(msg, fields) {
+/**
+ * 设置检测结果为成功。优先展示「题型与结构」（每题的小题数、含哪些组件），无 slots 时退回展示已识别字段列表。
+ * @param {string} msg - 顶部摘要（如「已遍历 16/16 题…」）
+ * @param {Array} [fields] - 原始字段列表（role/label），slots 为空时用于生成详情
+ * @param {Array} [slots] - 每题结构：[{ index, subCount, sectionLabels, optionKind }]
+ * @param {boolean} [hasTopLevelAudio] - 是否有大题共享音频框，可选展示在摘要中
+ */
+function setDetectResultSuccess(msg, fields, slots, hasTopLevelAudio) {
   const wrap = document.getElementById("detect-result");
   if (!wrap) return wrap;
   const simple = wrap.querySelector(".detect-result-simple");
@@ -29,19 +72,43 @@ function setDetectResultSuccess(msg, fields) {
   const summary = wrap.querySelector(".detect-result-summary");
   const detail = wrap.querySelector(".detect-result-detail");
   const toggle = wrap.querySelector(".detect-result-toggle");
+  const toggleText = toggle && toggle.querySelector(".detect-result-toggle-text");
   if (simple) simple.style.display = "none";
   if (structured) structured.style.display = "block";
+
+  let summaryLine = msg || "";
+  if (hasTopLevelAudio === true && summaryLine) summaryLine += "；本页含大题共享音频。";
+  if (hasTopLevelAudio === false && summaryLine) summaryLine += "；本页仅小题独立音频。";
   if (summary) {
-    summary.textContent = msg;
+    summary.textContent = summaryLine;
     summary.className = "detect-result-summary message-area text-success";
   }
-  const fieldList = (fields || []).map(f => (typeof f === "string" ? f : (f.label || f.role || ""))).filter(Boolean);
-  if (detail) {
-    detail.textContent = "已识别字段：" + fieldList.join("、");
-    detail.className = "detect-result-detail message-area text-success"; // 默认展开，分析完即见字段列表
+
+  if (slots && slots.length > 0) {
+    if (toggleText) toggleText.textContent = "题型与结构";
+    if (detail) {
+      const lines = slots.map((s) => {
+        const n = s.subCount != null ? s.subCount : 1;
+        const parts = s.sectionLabels && s.sectionLabels.length > 0
+          ? s.sectionLabels.join("、")
+          : "—";
+        const opt = (s.optionKind === "image") ? "图片" : "文字";
+        return `第${s.index}题：共${n}小题 · 含：${parts} · 选项：${opt}`;
+      });
+      detail.textContent = lines.join("\n");
+      detail.className = "detect-result-detail message-area text-success collapsed";
+    }
+  } else {
+    if (toggleText) toggleText.textContent = "已识别字段";
+    const fieldList = (fields || []).map(f => (typeof f === "string" ? f : (f.label || f.role || ""))).filter(Boolean);
+    if (detail) {
+      detail.textContent = "已识别字段：" + (fieldList.length ? fieldList.join("、") : "—");
+      detail.className = "detect-result-detail message-area text-success collapsed";
+    }
   }
+
   if (toggle) {
-    toggle.setAttribute("aria-expanded", "true");
+    toggle.setAttribute("aria-expanded", "false");
     toggle.onclick = () => {
       const expanded = toggle.getAttribute("aria-expanded") === "true";
       toggle.setAttribute("aria-expanded", !expanded);
@@ -83,23 +150,25 @@ async function refreshMonitorState() {
     statusBadge.classList.remove("inactive");
     onlyWhenDetected.classList.remove("hidden");
     whenNotDetected.classList.add("hidden");
-    const { selectors, lastDetectMessage } = await chrome.storage.sync.get(["selectors", "lastDetectMessage"]);
+    const { selectors, lastDetectMessage, pageSlots, hasTopLevelAudio } = await chrome.storage.sync.get(["selectors", "lastDetectMessage", "pageSlots", "hasTopLevelAudio"]);
     const hintEl = document.getElementById("uploadStepHint");
     const resultEl = document.getElementById("detect-result");
     if (selectors && Object.keys(selectors).filter(k => selectors[k]).length > 0) {
       const fieldKeys = Object.keys(selectors).filter(k => selectors[k]);
-      setDetectResultSuccess(lastDetectMessage || "已了解各题结构，允许上传 Word。", fieldKeys);
+      setDetectResultSuccess(lastDetectMessage || "已了解各题结构，允许上传 Word。", fieldKeys, pageSlots || null, hasTopLevelAudio);
       
       const detectBtnIcon = document.querySelector("#detect .card-icon");
       const detectBtnTitle = document.querySelector("#detect .card-title");
       const detectBtnDesc = document.querySelector("#detect .card-desc");
       
-      // 更新按钮状态为已识别
+      // 更新按钮状态为已识别（三弧 logo 绿色）
+      const detectEl = document.getElementById("detect");
+      if (detectEl) detectEl.classList.add("is-analyzed");
       if (detectBtnIcon) {
-        detectBtnIcon.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"></path></svg>`;
+        detectBtnIcon.innerHTML = DETECT_ICON_MAGNIFIER;
         detectBtnIcon.style.color = "var(--brand-green)";
-        detectBtnIcon.style.background = "rgba(16, 185, 129, 0.1)";
-        detectBtnIcon.classList.remove("icon-spin");
+        detectBtnIcon.style.background = "transparent";
+        detectBtnIcon.classList.remove("icon-spin", "card-icon--searching");
       }
       if (detectBtnTitle) {
         detectBtnTitle.textContent = "已分析";
@@ -125,12 +194,14 @@ async function refreshMonitorState() {
       const detectBtnTitle = document.querySelector("#detect .card-title");
       const detectBtnDesc = document.querySelector("#detect .card-desc");
       
-      // 恢复按钮初始状态
+      // 恢复按钮初始状态（三弧 logo 白色）
+      const detectElReset = document.getElementById("detect");
+      if (detectElReset) detectElReset.classList.remove("is-analyzed");
       if (detectBtnIcon) {
-        detectBtnIcon.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>`;
+        detectBtnIcon.innerHTML = DETECT_ICON_MAGNIFIER;
         detectBtnIcon.style.color = "";
         detectBtnIcon.style.background = "";
-        detectBtnIcon.classList.remove("icon-spin");
+        detectBtnIcon.classList.remove("icon-spin", "card-icon--searching");
       }
       if (detectBtnTitle) {
         detectBtnTitle.textContent = "分析页面";
@@ -265,16 +336,17 @@ chrome.runtime.onMessage.addListener((msg) => {
   if (resultEl) resultEl.style.display = "block";
   if (msg.type === "DETECT_PROGRESS") {
     const total = msg.total ? `/${msg.total}` : "";
-    const fields = (msg.fields || []).join("、");
-    setDetectResultSimple(`正在遍历第 ${msg.walked}${total} 题，已识别字段：${fields || "检测中…"}`, "text-muted");
+    const desc = describeStructureFromFields(msg.fields || []);
+    setDetectResultSimple(`正在遍历第 ${msg.walked}${total} 题 · ${desc}`, "text-muted");
     if (!resultEl) return;
     
     const detectBtnIcon = document.querySelector("#detect .card-icon");
-    if (detectBtnIcon && !detectBtnIcon.classList.contains("icon-spin")) {
-      detectBtnIcon.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>`;
-      detectBtnIcon.classList.add("icon-spin");
+    if (detectBtnIcon && !detectBtnIcon.classList.contains("card-icon--searching")) {
+      detectBtnIcon.innerHTML = DETECT_ICON_MAGNIFIER;
+      detectBtnIcon.classList.add("card-icon--searching");
+      detectBtnIcon.classList.remove("icon-spin");
       detectBtnIcon.style.color = "var(--brand-green)";
-      detectBtnIcon.style.background = "rgba(16, 185, 129, 0.1)";
+      detectBtnIcon.style.background = "transparent";
       
       const detectBtnTitle = document.querySelector("#detect .card-title");
       if (detectBtnTitle) {
@@ -305,7 +377,7 @@ chrome.runtime.onMessage.addListener((msg) => {
   }
   if (msg.type === "PARSE_DONE") {
     setDropZoneState("done", { questions: msg.questions, debug_info: msg.debug_info });
-    setMsg("", false);
+    setMsg("识别完成，正在自动填入录题页…", false);
     updateFillCacheDot();
     pushJsonHistory(JSON.stringify(msg.questions), msg.debug_info || null).catch(() => {});
     doFill(msg.questions);
@@ -361,6 +433,35 @@ function setMsg(text, isError) {
   }
 }
 
+/**
+ * 填充暂停时，在 msg 区域显示提示，并展示「继续填充」按钮。
+ * 用户手动补全当前题并让页面跳到下一题后，点按钮即可继续。
+ */
+function showPausedFillUI(pausedQuestion, remaining) {
+  const resumeBtn = document.getElementById("resumeFillBtn");
+  if (!resumeBtn) return;
+
+  const count = remaining ? remaining.length : 0;
+  setMsg(
+    `第 ${pausedQuestion} 题保存后未自动跳转（可能有必填项未填，如音频）。` +
+    `请手动补全该题并保存，待页面切换到下一题后，点击「继续填充」。`,
+    true
+  );
+
+  if (count > 0) {
+    resumeBtn.textContent = `继续填充（剩余 ${count} 题）`;
+    resumeBtn.classList.remove("hidden");
+    resumeBtn.onclick = async () => {
+      resumeBtn.classList.add("hidden");
+      resumeBtn.onclick = null;
+      await doFill(remaining);
+    };
+  } else {
+    resumeBtn.classList.add("hidden");
+    resumeBtn.onclick = null;
+  }
+}
+
 // 显示错误 + 复制按钮
 function setErrorMsg(text) {
   setMsg(text, true);
@@ -389,13 +490,14 @@ document.getElementById("detect").addEventListener("click", async () => {
   const detectBtnTitle = document.querySelector("#detect .card-title");
   const detectBtnDesc = document.querySelector("#detect .card-desc");
 
-  // 状态更新为分析中
+  // 状态更新为分析中（放大镜 + 查找动效）
   if (detectEl) detectEl.classList.add("is-analyzing");
   if (detectBtnIcon) {
-    detectBtnIcon.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>`;
-    detectBtnIcon.classList.add("icon-spin");
+    detectBtnIcon.innerHTML = DETECT_ICON_MAGNIFIER;
+    detectBtnIcon.classList.add("card-icon--searching");
+    detectBtnIcon.classList.remove("icon-spin");
     detectBtnIcon.style.color = "var(--brand-green)";
-    detectBtnIcon.style.background = "rgba(16, 185, 129, 0.1)";
+    detectBtnIcon.style.background = "transparent";
   }
   if (detectBtnTitle) {
     detectBtnTitle.textContent = "分析中...";
@@ -407,11 +509,13 @@ document.getElementById("detect").addEventListener("click", async () => {
   if (!tab?.id) {
     setDetectResultSimple("无法获取当前标签页", "text-error");
     if (detectBtnIcon) {
-      detectBtnIcon.classList.remove("icon-spin");
-      detectBtnIcon.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>`;
+      detectBtnIcon.classList.remove("icon-spin", "card-icon--searching");
+      detectBtnIcon.innerHTML = DETECT_ICON_MAGNIFIER;
       detectBtnIcon.style.color = "";
       detectBtnIcon.style.background = "";
     }
+    const detectEl = document.getElementById("detect");
+    if (detectEl) detectEl.classList.remove("is-analyzed");
     if (detectBtnTitle) {
       detectBtnTitle.textContent = "分析页面";
       detectBtnTitle.style.color = "";
@@ -433,12 +537,12 @@ document.getElementById("detect").addEventListener("click", async () => {
   try {
     const res = await chrome.tabs.sendMessage(tab.id, { type: "DETECT_AND_WALK", selectors: stored || {} });
     
-    if (detectBtnIcon) detectBtnIcon.classList.remove("icon-spin");
+    if (detectBtnIcon) detectBtnIcon.classList.remove("icon-spin", "card-icon--searching");
 
     if (!res || !res.ok) {
       setDetectResultSimple(res?.error || "分析失败，请确认在录题页面", "text-error");
       if (detectBtnIcon) {
-        detectBtnIcon.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>`;
+        detectBtnIcon.innerHTML = DETECT_ICON_MAGNIFIER;
         detectBtnIcon.style.color = "";
         detectBtnIcon.style.background = "";
       }
@@ -447,10 +551,10 @@ document.getElementById("detect").addEventListener("click", async () => {
         detectBtnTitle.style.color = "";
       }
       if (detectBtnDesc) detectBtnDesc.textContent = "识别当前表单";
-      if (detectEl) detectEl.classList.remove("is-analyzing");
+      if (detectEl) detectEl.classList.remove("is-analyzing", "is-analyzed");
       return;
     }
-    const { selectors, fields, message, walked, total, slots } = res;
+    const { selectors, fields, message, walked, total, slots, hasTopLevelAudio } = res;
     const walked_n = walked || "?";
     const total_n = total ? `/${total}` : "";
     const msg = message || `已遍历 ${walked_n}${total_n} 题，了解页面结构，允许上传 Word。`;
@@ -460,6 +564,7 @@ document.getElementById("detect").addEventListener("click", async () => {
       lastDetectMessage: msg,
       pageQuestionTotal: total != null && total > 0 ? total : null,
       pageSlots: slots && slots.length > 0 ? slots : null,
+      hasTopLevelAudio: !!hasTopLevelAudio,
     });
     if (tab?.id) {
       chrome.storage.local.set({ fillTargetTabId: tab.id });
@@ -467,17 +572,17 @@ document.getElementById("detect").addEventListener("click", async () => {
         chrome.runtime.sendMessage({ type: "REFRESH_BADGE", tabId: tab.id }).catch(() => {});
       }
     }
-    setDetectResultSuccess(msg, fields || []);
+    setDetectResultSuccess(msg, fields || [], slots || [], hasTopLevelAudio);
     
-    // 更新按钮状态为已识别
-    if (detectEl) detectEl.classList.remove("is-analyzing");
+    // 更新按钮状态为已识别（三弧 logo 绿色）
+    if (detectEl) detectEl.classList.remove("is-analyzing"), detectEl.classList.add("is-analyzed");
     if (detectBtnIcon) {
-        detectBtnIcon.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"></path></svg>`;
-        detectBtnIcon.style.color = "var(--brand-green)";
-        detectBtnIcon.style.background = "rgba(16, 185, 129, 0.1)";
-      }
-      if (detectBtnTitle) {
-        detectBtnTitle.textContent = "已分析";
+      detectBtnIcon.innerHTML = DETECT_ICON_MAGNIFIER;
+      detectBtnIcon.style.color = "var(--brand-green)";
+      detectBtnIcon.style.background = "transparent";
+    }
+    if (detectBtnTitle) {
+      detectBtnTitle.textContent = "已分析";
       detectBtnTitle.style.color = "var(--brand-green)";
     }
     if (detectBtnDesc) {
@@ -493,10 +598,10 @@ document.getElementById("detect").addEventListener("click", async () => {
     // 分析完成后保留检测结果可见，不自动隐藏
   } catch (e) {
     const errMsg = String(e?.message || e);
-    if (detectEl) detectEl.classList.remove("is-analyzing");
+    if (detectEl) detectEl.classList.remove("is-analyzing", "is-analyzed");
     if (detectBtnIcon) {
-      detectBtnIcon.classList.remove("icon-spin");
-      detectBtnIcon.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>`;
+      detectBtnIcon.classList.remove("icon-spin", "card-icon--searching");
+      detectBtnIcon.innerHTML = DETECT_ICON_MAGNIFIER;
       detectBtnIcon.style.color = "";
       detectBtnIcon.style.background = "";
     }
@@ -549,7 +654,7 @@ let targetTabId = null;
 // 题型 → 中文（含听说题型），复制/预览时使用
 const QUESTION_TYPE_MAP = {
   single: "单选", multiple: "多选", judge: "判断", blank: "填空",
-  listening_choice: "听后选择", listening_response: "听后应答", reading_aloud: "模仿朗读",
+  listening_choice: "听后选择", listening_response: "听后应答", reading_aloud: "交际朗读",
   listening_fill: "听后填空", listening_retell: "信息转述",
 };
 
@@ -766,6 +871,21 @@ function setDropZoneState(state, data = {}) {
         }).catch(() => setMsg("复制失败", true));
       };
     }
+    const fillFromResultBtn = document.getElementById("fillFromResult");
+    if (fillFromResultBtn) {
+      if (qs.length > 0) {
+        fillFromResultBtn.classList.remove("hidden");
+        fillFromResultBtn.classList.add("btn-fill-result");
+        fillFromResultBtn.onclick = async (e) => {
+          e.stopPropagation();
+          e.preventDefault();
+          await doFill(qs);
+        };
+      } else {
+        fillFromResultBtn.classList.add("hidden");
+        fillFromResultBtn.onclick = null;
+      }
+    }
 
     // 恢复「解析并填入」卡片为「重新解析」，避免还显示「识别中...」
     upBtn.style.opacity = "1";
@@ -797,9 +917,10 @@ function fileToBase64(file) {
  * @param {Array} questions - 解析结果（可能多条独立小题）
  * @param {number|null} pageTotal - 录题页题数（可选）
  * @param {Array|null} pageSlots - 页面分析时每题的 subCount 信息（优先用于精确合并）
+ * @param {boolean} [hasTopLevelAudio] - 页面是否检测到大题共享音频输入框
  * @returns {Array} 按大题组织的题目，适合 FILL_FORM
  */
-function normalizeQuestionsToSlots(questions, pageTotal, pageSlots) {
+function normalizeQuestionsToSlots(questions, pageTotal, pageSlots, hasTopLevelAudio) {
   if (!questions || questions.length === 0) return questions;
   const noBlanks = (x) => !x.blanks || !Array.isArray(x.blanks) || x.blanks.length === 0;
   const hasBlanks = (x) => x.blanks && Array.isArray(x.blanks) && x.blanks.length > 0;
@@ -834,9 +955,11 @@ function normalizeQuestionsToSlots(questions, pageTotal, pageSlots) {
           explanation: group.map(b => b.explanation).filter(Boolean).join("；"),
           blanks: group.map(b => ({
             question: b.question || "",
+            keyword: b.keyword || "",
             answer: b.answer != null ? String(b.answer).trim() : "",
             options: Array.isArray(b.options) ? b.options : [],
             candidates: Array.isArray(b.candidates) ? b.candidates : [],
+            listening_script: b.listening_script || "",
           })),
         });
         qi += need;
@@ -917,9 +1040,11 @@ function normalizeQuestionsToSlots(questions, pageTotal, pageSlots) {
           explanation: group.map(b => b.explanation).filter(Boolean).join("；"),
           blanks: group.map(b => ({
             question: b.question || "",
+            keyword: b.keyword || "",
             answer: b.answer != null ? String(b.answer).trim() : "",
             options: Array.isArray(b.options) ? b.options : [],
             candidates: Array.isArray(b.candidates) ? b.candidates : [],
+            listening_script: b.listening_script || "",
           })),
         });
         i = j;
@@ -929,6 +1054,26 @@ function normalizeQuestionsToSlots(questions, pageTotal, pageSlots) {
     out.push(q);
     i++;
   }
+
+  // ── 后处理：根据页面是否有「顶层共享音频框」修正 listening_script 的分布 ──
+  // hasTopLevelAudio===true  → 情形 B：blanks[n].listening_script 应留小题各自内容，
+  //                            顶层 listening_script 存共享对话（LLM 已做，保持原样）
+  // hasTopLevelAudio===false → 情形 A：页面只有各小题音频框，共享对话必须拆到每个 blank，
+  //                            若顶层 listening_script 有内容而各 blank 为空 → 下放
+  if (hasTopLevelAudio === false) {
+    for (const q of out) {
+      if (!q.blanks || q.blanks.length === 0) continue;
+      const topScript = (q.listening_script || "").trim();
+      if (!topScript) continue;
+      const allBlanksEmpty = q.blanks.every(b => !(b.listening_script || "").trim());
+      if (allBlanksEmpty) {
+        // 顶层有内容，各 blank 全空 → 把共享内容下发到每个 blank
+        q.blanks.forEach(b => { b.listening_script = topScript; });
+        q.listening_script = "";  // 顶层清空（页面没有顶层音频框）
+      }
+    }
+  }
+
   return out;
 }
 
@@ -950,16 +1095,16 @@ async function doFill(questions) {
     return;
   }
 
-  const { selectors, pageQuestionTotal, pageSlots, defaultAudioUrl, defaultImageUrl } = await chrome.storage.sync.get(["selectors", "pageQuestionTotal", "pageSlots", "defaultAudioUrl", "defaultImageUrl"]);
-  // 检查是否已做过页面检测（上方 detect-result 已有「尚未分析…」提示，不再重复红色条）
-  if (!selectors || !Object.values(selectors).some(Boolean)) {
-    setMsg("", false);
-    return;
+  const { selectors, pageQuestionTotal, pageSlots, defaultAudioUrl, defaultImageUrl, hasTopLevelAudio } = await chrome.storage.sync.get(["selectors", "pageQuestionTotal", "pageSlots", "defaultAudioUrl", "defaultImageUrl", "hasTopLevelAudio"]);
+  // 未检测过页面结构时给出提示，但不阻断填充（content.js 内 runFill 会再次 detectForm 新检测）
+  const hasStructure = selectors && Object.values(selectors).some(Boolean);
+  if (!hasStructure) {
+    setMsg("⚠️ 尚未分析页面结构，建议先点「检测页面结构」。尝试直接填入…", false);
   }
 
   // 先将小题合并为大题（优先用 pageSlots 的 subCount 精确合并，无则按 listening_script 推测）
   const pageTotal = pageQuestionTotal != null && pageQuestionTotal > 0 ? pageQuestionTotal : null;
-  let toFill = normalizeQuestionsToSlots(questions, pageTotal != null ? pageTotal : null, pageSlots || null);
+  let toFill = normalizeQuestionsToSlots(questions, pageTotal != null ? pageTotal : null, pageSlots || null, hasTopLevelAudio);
   let trimMsg = "";
 
   if (pageTotal != null) {
@@ -976,6 +1121,9 @@ async function doFill(questions) {
   }
 
   setMsg(trimMsg || `共 ${toFill.length} 题，正在填入录题页…`, false);
+  // 开始新的填充时隐藏上次遗留的「继续填充」按钮
+  const _resumeBtn = document.getElementById("resumeFillBtn");
+  if (_resumeBtn) { _resumeBtn.classList.add("hidden"); _resumeBtn.onclick = null; }
 
   const historyBtn = document.getElementById("jsonHistoryBtn");
   if (historyBtn) {
@@ -1002,6 +1150,10 @@ async function doFill(questions) {
       debugSource: "parse",
     });
     restoreFillBtn();
+    if (result?.ok === "paused") {
+      showPausedFillUI(result.pausedQuestion, result.remaining || []);
+      return;
+    }
     if (result?.ok === false) {
       setMsg((result.error || "填充出错") + "。可先点上方「复制题目列表」或「复制完整题目」把识别结果发给我排查。", true);
       return;
@@ -1252,8 +1404,7 @@ if (jsonHistoryBtn && jsonHistoryDropdown) {
       mainBtn.type = "button";
       mainBtn.className = "json-history-item-main";
       mainBtn.innerHTML = `<span class="item-preview">${escapeHtml(preview)}</span><span class="item-time">${escapeHtml(timeStr)}</span>`;
-      mainBtn.addEventListener("click", async (ev) => {
-        ev.preventDefault();
+      const doFillThis = async () => {
         jsonHistoryDropdown.classList.add("hidden");
         let questions;
         try {
@@ -1271,24 +1422,39 @@ if (jsonHistoryBtn && jsonHistoryDropdown) {
         const ta = document.getElementById("json");
         if (ta) ta.value = item.text;
         doFill(questions);
+      };
+      mainBtn.addEventListener("click", async (ev) => {
+        ev.preventDefault();
+        await doFillThis();
+      });
+      const fillBtn = document.createElement("button");
+      fillBtn.type = "button";
+      fillBtn.className = "json-history-item-copy json-history-item-fill";
+      fillBtn.title = "一键填入当前页面";
+      fillBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>`;
+      fillBtn.addEventListener("click", async (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        await doFillThis();
       });
       const copyBtn = document.createElement("button");
       copyBtn.type = "button";
       copyBtn.className = "json-history-item-copy";
-      copyBtn.title = "复制 JSON";
+      copyBtn.title = "复制试题 JSON";
       copyBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>`;
       copyBtn.addEventListener("click", async (ev) => {
         ev.preventDefault();
         ev.stopPropagation();
         try {
           await navigator.clipboard.writeText(item.text);
-          setMsg("已复制 JSON 到剪贴板", false);
+          setMsg("已复制试题 JSON 到剪贴板", false);
           setTimeout(() => setMsg("", false), 1500);
         } catch (_) {
           setMsg("复制失败", true);
         }
       });
       wrap.appendChild(mainBtn);
+      wrap.appendChild(fillBtn);
       wrap.appendChild(copyBtn);
       if (item.debug_info && item.debug_info.system_prompt) {
         const promptBtn = document.createElement("button");
@@ -1677,13 +1843,14 @@ if (detectBtn) {
     const detectBtnTitle = document.querySelector("#detect .card-title");
     const detectBtnDesc = document.querySelector("#detect .card-desc");
 
-    // 状态更新为分析中
+    // 状态更新为分析中（放大镜 + 查找动效）
     if (detectEl) detectEl.classList.add("is-analyzing");
     if (detectBtnIcon) {
-      detectBtnIcon.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>`;
-      detectBtnIcon.classList.add("icon-spin");
+      detectBtnIcon.innerHTML = DETECT_ICON_MAGNIFIER;
+      detectBtnIcon.classList.add("card-icon--searching");
+      detectBtnIcon.classList.remove("icon-spin");
       detectBtnIcon.style.color = "var(--brand-green)";
-      detectBtnIcon.style.background = "rgba(16, 185, 129, 0.1)";
+      detectBtnIcon.style.background = "transparent";
     }
     if (detectBtnTitle) {
       detectBtnTitle.textContent = "分析中...";
@@ -1696,8 +1863,8 @@ if (detectBtn) {
     } catch (e) {
       setDetectResultSimple("未连接页面，请刷新录题页后重试", "text-error");
       if (detectBtnIcon) {
-        detectBtnIcon.classList.remove("icon-spin");
-        detectBtnIcon.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>`;
+        detectBtnIcon.classList.remove("icon-spin", "card-icon--searching");
+        detectBtnIcon.innerHTML = DETECT_ICON_MAGNIFIER;
         detectBtnIcon.style.color = "";
         detectBtnIcon.style.background = "";
       }
@@ -1706,7 +1873,7 @@ if (detectBtn) {
         detectBtnTitle.style.color = "";
       }
       if (detectBtnDesc) detectBtnDesc.textContent = "识别当前表单";
-      if (detectEl) detectEl.classList.remove("is-analyzing");
+      if (detectEl) detectEl.classList.remove("is-analyzing", "is-analyzed");
       return;
     }
 
@@ -1717,8 +1884,8 @@ if (detectBtn) {
       if (!res || !res.ok) {
         setDetectResultSimple(res?.error || "分析失败，请确认在录题页面", "text-error");
         if (detectBtnIcon) {
-          detectBtnIcon.classList.remove("icon-spin");
-          detectBtnIcon.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>`;
+          detectBtnIcon.classList.remove("icon-spin", "card-icon--searching");
+          detectBtnIcon.innerHTML = DETECT_ICON_MAGNIFIER;
           detectBtnIcon.style.color = "";
           detectBtnIcon.style.background = "";
         }
@@ -1727,32 +1894,33 @@ if (detectBtn) {
           detectBtnTitle.style.color = "";
         }
         if (detectBtnDesc) detectBtnDesc.textContent = "识别当前表单";
-        if (detectEl) detectEl.classList.remove("is-analyzing");
+        if (detectEl) detectEl.classList.remove("is-analyzing", "is-analyzed");
         return;
       }
 
-      if (detectBtnIcon) detectBtnIcon.classList.remove("icon-spin");
+      if (detectBtnIcon) detectBtnIcon.classList.remove("icon-spin", "card-icon--searching");
 
-    const { selectors, fields, message, walked, total, slots } = res;
+    const { selectors, fields, message, walked, total, slots, hasTopLevelAudio } = res;
     await chrome.storage.sync.set({
       selectors,
       fields: fields || [],
       lastDetectMessage: message,
       pageQuestionTotal: total != null && total > 0 ? total : null,
       pageSlots: slots && slots.length > 0 ? slots : null,
+      hasTopLevelAudio: !!hasTopLevelAudio,
     });
 
       const totalN = total != null && total > 0 ? `/${total}` : "";
       const msg = message || `成功分析 ${walked}${totalN} 题，了解页面结构，允许上传 Word。`;
-      setDetectResultSuccess(msg, fields || []);
+      setDetectResultSuccess(msg, fields || [], slots || [], hasTopLevelAudio);
       
-      // 更新按钮状态为已识别
-      if (detectEl) detectEl.classList.remove("is-analyzing");
+      // 更新按钮状态为已识别（三弧 logo 绿色）
+      if (detectEl) detectEl.classList.remove("is-analyzing"), detectEl.classList.add("is-analyzed");
       if (detectBtnIcon) {
-        detectBtnIcon.classList.remove("icon-spin");
-        detectBtnIcon.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"></path></svg>`;
+        detectBtnIcon.classList.remove("icon-spin", "card-icon--searching");
+        detectBtnIcon.innerHTML = DETECT_ICON_MAGNIFIER;
         detectBtnIcon.style.color = "var(--brand-green)";
-        detectBtnIcon.style.background = "rgba(16, 185, 129, 0.1)";
+        detectBtnIcon.style.background = "transparent";
       }
       if (detectBtnTitle) {
         detectBtnTitle.textContent = "已分析";
@@ -1772,8 +1940,8 @@ if (detectBtn) {
       // 分析完成后保留检测结果可见，不自动隐藏
     } catch (e) {
       if (detectBtnIcon) {
-        detectBtnIcon.classList.remove("icon-spin");
-        detectBtnIcon.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>`;
+        detectBtnIcon.classList.remove("icon-spin", "card-icon--searching");
+        detectBtnIcon.innerHTML = DETECT_ICON_MAGNIFIER;
         detectBtnIcon.style.color = "";
         detectBtnIcon.style.background = "";
       }
@@ -1782,7 +1950,7 @@ if (detectBtn) {
         detectBtnTitle.style.color = "";
       }
       if (detectBtnDesc) detectBtnDesc.textContent = "识别当前表单";
-      if (detectEl) detectEl.classList.remove("is-analyzing");
+      if (detectEl) detectEl.classList.remove("is-analyzing", "is-analyzed");
       
       setDetectResultSimple("分析中断：" + e.message, "text-error");
     }

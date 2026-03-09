@@ -2,7 +2,7 @@
 // 弹窗关闭后任务依然继续，结果写入 chrome.storage.local
 
 const BACKEND = "http://127.0.0.1:8766";
-const PARSE_TIMEOUT_MS = 3 * 60 * 1000; // 最长等待 3 分钟
+const PARSE_TIMEOUT_MS = 5 * 60 * 1000; // 最长等待 5 分钟
 
 // 当前 fetch 的 AbortController，用于取消识别
 let currentController = null;
@@ -87,7 +87,7 @@ async function handleRequestFill(questions) {
   if (!questions || questions.length === 0) {
     return { ok: false, error: "没有可填入的题目" };
   }
-  const { selectors, pageQuestionTotal, pageSlots, defaultAudioUrl, defaultImageUrl } = await chrome.storage.sync.get(["selectors", "pageQuestionTotal", "pageSlots", "defaultAudioUrl", "defaultImageUrl"]);
+  const { selectors, pageQuestionTotal, pageSlots, defaultAudioUrl, defaultImageUrl, hasTopLevelAudio } = await chrome.storage.sync.get(["selectors", "pageQuestionTotal", "pageSlots", "defaultAudioUrl", "defaultImageUrl", "hasTopLevelAudio"]);
   if (!selectors || !Object.values(selectors).some(Boolean)) {
     return { ok: false, error: "请先完成「步骤1：检测页面结构」再填充" };
   }
@@ -99,7 +99,7 @@ async function handleRequestFill(questions) {
   if (!tabId) {
     return { ok: false, error: "无法确定录题页，请确认页面已打开" };
   }
-  let toFill = normalizeQuestionsToSlots(questions, null, pageSlots || null);
+  let toFill = normalizeQuestionsToSlots(questions, null, pageSlots || null, hasTopLevelAudio);
   const pageTotal = pageQuestionTotal != null && pageQuestionTotal > 0 ? pageQuestionTotal : null;
   // 只裁掉多余的题，不补空题：题数不足时只填有内容的题，不反复点「下一题」填空白
   if (pageTotal != null && toFill.length > pageTotal) {
@@ -135,7 +135,7 @@ function setState(state) {
 }
 
 /** 将小题列表规范为大题列表（与 popup 中逻辑一致），供 FILL_FORM 使用 */
-function normalizeQuestionsToSlots(questions, pageTotal, pageSlots) {
+function normalizeQuestionsToSlots(questions, pageTotal, pageSlots, hasTopLevelAudio) {
   if (!questions || questions.length === 0) return questions;
   const noBlanks = (x) => !x.blanks || !Array.isArray(x.blanks) || x.blanks.length === 0;
   const hasBlanks = (x) => x.blanks && Array.isArray(x.blanks) && x.blanks.length > 0;
@@ -241,6 +241,21 @@ function normalizeQuestionsToSlots(questions, pageTotal, pageSlots) {
     out.push(q);
     i++;
   }
+
+  // ── 后处理：hasTopLevelAudio===false → 情形 A，共享内容下发到各 blank ──
+  if (hasTopLevelAudio === false) {
+    for (const q of out) {
+      if (!q.blanks || q.blanks.length === 0) continue;
+      const topScript = (q.listening_script || "").trim();
+      if (!topScript) continue;
+      const allBlanksEmpty = q.blanks.every(b => !(b.listening_script || "").trim());
+      if (allBlanksEmpty) {
+        q.blanks.forEach(b => { b.listening_script = topScript; });
+        q.listening_script = "";
+      }
+    }
+  }
+
   // 统一归一化所有答案字段：无论 AI 输出 "C. Four." / "(C)" / "3" 都转为 "C"
   return out.map(q => normalizeAnswers(q));
 }
@@ -428,7 +443,7 @@ async function handleParse(filesData) {
   } catch (e) {
     if (e.name === "AbortError") {
       if (currentController?._isTimeout) {
-        const errText = "识别超时（超过3分钟），请检查：①后端服务是否运行 ②豆包 API 是否可用";
+        const errText = "识别超时（超过5分钟），请检查：①后端服务是否运行 ②豆包 API 是否可用";
         await setState({ status: "error", text: errText });
         if (parseTabId) updateBadgeForRecordTab(parseTabId, "parse_error");
         broadcastToPopup({ type: "PARSE_ERROR", text: errText });

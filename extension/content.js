@@ -293,6 +293,8 @@ const SECTION_LABEL_PATTERNS = [
   { pattern: /上传音频/i, label: "上传音频" },
   { pattern: /听力原文|原文\s*[：:]?/i, label: "听力原文" },
   { pattern: /设置题干|题干/i, label: "题干" },
+  { pattern: /参考单词|送评单词|送评词|参考词/i, label: "参考单词" },
+  { pattern: /图片选项|选项.*图片|option.*image/i, label: "图片选项" },
   { pattern: /设置选项|选项\s*[A-D]?/i, label: "设置选项" },
   { pattern: /设置答案|答案/i, label: "设置答案" },
   { pattern: /上传图片|图片\s*上传/i, label: "上传图片" },
@@ -324,6 +326,24 @@ function getCurrentCardSectionLabels() {
     }
   };
   walk(root);
+
+  // 额外：扫描输入框的 placeholder 文字，将有意义的 placeholder 也纳入标签
+  // 这样当 caption 标题缺失时，AI 仍能知道该输入框的用途
+  const inputEls = root.querySelectorAll(
+    "input[placeholder]:not([type='hidden']):not([type='submit']):not([type='button']):not([type='file']):not([type='radio']):not([type='checkbox']), textarea[placeholder]"
+  );
+  for (const inp of inputEls) {
+    const ph = (inp.getAttribute("placeholder") || "").trim().slice(0, 40);
+    if (!ph || ph.length < 2) continue;
+    for (const { pattern, label } of SECTION_LABEL_PATTERNS) {
+      if (pattern.test(ph) && !seen.has(label)) {
+        seen.add(label);
+        labels.push(label);
+        break;
+      }
+    }
+  }
+
   return labels;
 }
 
@@ -348,7 +368,7 @@ function getSubQuestionDetails() {
       const t = (el.textContent || "").trim();
       if (
         /第[一二三四五六七八九十]+节[：:]/.test(t) ||
-        /信息记录|信息转述|模仿朗读|听后选择|听后应答/.test(t)
+        /信息记录|信息转述|模仿朗读|交际朗读|听后选择|听后应答/.test(t)
       ) {
         heading = t.slice(0, 60);
         break;
@@ -381,6 +401,73 @@ function getSubQuestionDetails() {
   return details;
 }
 
+/**
+ * 检测当前题目卡片内的选项是否为图片类型。
+ * 判断依据：
+ * 1. 区块标题含「图片选项」
+ * 2. 选项输入框 placeholder 含图片文件名特征（.png/.jpg）
+ * 3. 选项输入框当前值是图片文件名
+ * 4. 存在图片上传/预览组件
+ * 返回 "image" | "text"
+ */
+function getCurrentCardOptionKind() {
+  const root = document.querySelector(".topic-container, #topic-section, #topic, #right-container") || document.body;
+  
+  // 1. 区块标题含「图片选项」
+  const allText = (root.innerText || root.textContent || "").toLowerCase();
+  if (/图片选项|option.*image/i.test(allText.slice(0, 2000))) return "image";
+  
+  // 2. 选项区域内的输入框检测
+  const optionRows = root.querySelectorAll(".row");
+  for (const row of optionRows) {
+    const cap = row.querySelector(".col.caption, .caption, .row-caption");
+    const capText = (cap && cap.textContent || "").trim();
+    if (!/设置选项|选项/.test(capText)) continue;
+    
+    const inputs = row.querySelectorAll("input[type='text'], input:not([type='hidden']):not([type='submit']):not([type='file']):not([type='radio']):not([type='checkbox']), textarea");
+    for (const inp of inputs) {
+      // 检查 placeholder
+      const ph = (inp.getAttribute("placeholder") || "").toLowerCase();
+      if (/\.png|\.jpg|\.jpeg|\.gif|\.webp|图片|支持.*图片|上传.*图片/.test(ph)) return "image";
+      
+      // 检查当前值是否是图片文件名
+      const val = (inp.value || "").toLowerCase();
+      if (/\.(png|jpg|jpeg|gif|webp)$/i.test(val)) return "image";
+      
+      // 输入框紧邻图片预览元素
+      const parent = inp.parentElement;
+      if (parent && (parent.querySelector("img, [class*='img'], [class*='image-preview'], [class*='preview']"))) return "image";
+    }
+    
+    // 选项区域内直接有图片预览或 uploadify 图片组件
+    if (row.querySelector(".uploadify[id*='option'], [id*='option'][class*='upload'], [id*='opt'][class*='image']")) return "image";
+    
+    // 检查是否有浏览按钮（通常图片选项会有浏览按钮）
+    const browseBtn = row.querySelector("button, a.btn, [role='button']");
+    if (browseBtn && /浏览|browse|选择图片|上传/i.test(browseBtn.textContent || "")) return "image";
+  }
+  
+  // 3. option_a/b/c/d 对应的输入框检测（通用兜底）
+  const optInputs = root.querySelectorAll(".option input[type=text], .col.option input, [class*='option'] input[type=text]");
+  for (const inp of optInputs) {
+    const ph = (inp.getAttribute("placeholder") || "").toLowerCase();
+    const val = (inp.value || "").toLowerCase();
+    if (/\.png|\.jpg|\.jpeg|\.gif|图片/.test(ph)) return "image";
+    if (/\.(png|jpg|jpeg|gif|webp)$/i.test(val)) return "image";
+  }
+  
+  // 4. 检查是否有多个浏览/删除按钮对（图片选项的典型特征）
+  const browseBtns = root.querySelectorAll("button, a.btn");
+  let browseCount = 0;
+  for (const btn of browseBtns) {
+    if (/浏览|browse/i.test(btn.textContent || "")) browseCount++;
+  }
+  // 如果有3个以上浏览按钮，很可能是图片选项（A/B/C/D 各一个）
+  if (browseCount >= 3) return "image";
+  
+  return "text";
+}
+
 /** 当前题目卡片内的小题数量：统计 .question-part 或答案框数量，供提示词标明「本题共 N 小题」 */
 function getCurrentCardSubCount() {
   const root = document.querySelector(".topic-container, #topic-section, #topic") || document.querySelector("#right-container");
@@ -410,6 +497,7 @@ function getCurrentQuestionContext(index, numbers, currentSelectors, currentFiel
     subCount: 1,
     inputCount: {},
     optionCount: 0,
+    optionKind: "text", // "text" | "image"：选项是文字还是图片类型
     media: { hasImage: false, hasAudio: false, inputKind: "text" },
     labels: {},
     questionJson: null,
@@ -424,10 +512,10 @@ function getCurrentQuestionContext(index, numbers, currentSelectors, currentFiel
       const prev = p.previousElementSibling;
       const text = (prev ? prev.textContent : p.textContent || "").trim();
       if (text && text.length < 80) {
-        if (/part\s*[a-d]|第一部分|第二部分|听后选择|听后应答|模仿朗读|信息转述|表格填空|填空/i.test(text)) {
+        if (/part\s*[a-d]|第一部分|第二部分|听后选择|听后应答|模仿朗读|交际朗读|信息转述|表格填空|填空/i.test(text)) {
           slot.partName = slot.partName || text.replace(/\s+/g, " ").slice(0, 30);
         }
-        if (/听后选择|听后应答|模仿朗读|信息转述|表格填空|单选|多选|判断|朗读|转述/i.test(text)) {
+        if (/听后选择|听后应答|模仿朗读|交际朗读|信息转述|表格填空|单选|多选|判断|朗读|转述/i.test(text)) {
           slot.typeHint = slot.typeHint || text.replace(/\s+/g, " ").slice(0, 24);
         }
       }
@@ -435,7 +523,7 @@ function getCurrentQuestionContext(index, numbers, currentSelectors, currentFiel
   }
 
   // 各角色输入框数量；答案框数即小题/空数
-  const roles = ["question", "answer", "explanation", "option_a", "option_b", "option_c", "option_d"];
+  const roles = ["question", "keyword", "answer", "explanation", "option_a", "option_b", "option_c", "option_d"];
   roles.forEach((role) => {
     const s = currentSelectors[role];
     const n = !s ? 0 : (typeof s === "string" ? s.split(",").map((x) => x.trim()).filter(Boolean).length : 1);
@@ -458,6 +546,11 @@ function getCurrentQuestionContext(index, numbers, currentSelectors, currentFiel
     slot.sectionLabels = getCurrentCardSectionLabels();
   } catch (_) {}
 
+  // 检测选项是否为图片类型（影响 AI prompt：图片选项用 <<IMG>> 占位）
+  try {
+    slot.optionKind = getCurrentCardOptionKind();
+  } catch (_) {}
+
   (currentFields || []).forEach((f) => {
     if (f.label) slot.labels[f.role] = f.label;
   });
@@ -471,11 +564,14 @@ async function runDetectAndWalk(initialSelectors) {
   let walked = 0;
   const total = numbers.length;
   const slots = []; // 每题的 subCount（小题数），用于填充时精确合并
+  // 遍历过程中只要有一题有顶层音频输入框，就设为 true
+  let hasTopLevelAudio = false;
 
   if (total === 0) {
     const result = detectForm();
     selectors = mergeSelectors(selectors, result.selectors);
     fields = mergeFields(fields, result.fields);
+    if (result.hasTopLevelAudio) hasTopLevelAudio = true;
     walked = 1;
     const _sc = getCurrentCardSubCount();
     slots.push({
@@ -483,6 +579,7 @@ async function runDetectAndWalk(initialSelectors) {
       subCount: _sc,
       sectionLabels: getCurrentCardSectionLabels(),
       subQuestions: _sc > 1 ? (getSubQuestionDetails() || []) : [],
+      optionKind: getCurrentCardOptionKind(),
     });
   } else {
     for (let i = 0; i < total; i++) {
@@ -490,13 +587,15 @@ async function runDetectAndWalk(initialSelectors) {
       const result = detectForm();
       selectors = mergeSelectors(selectors, result.selectors);
       fields = mergeFields(fields, result.fields);
+      if (result.hasTopLevelAudio) hasTopLevelAudio = true;
       walked = i + 1;
       // 收集本题小题数 + 区块标签，供 prompt 生成
       const subCount = getCurrentCardSubCount();
       const sectionLabels = getCurrentCardSectionLabels();
       // 若存在多个 .question-part，则额外收集每个小题的标题和标签（供逐小题描述）
       const subQuestions = subCount > 1 ? (getSubQuestionDetails() || []) : [];
-      slots.push({ index: i + 1, subCount, sectionLabels, subQuestions });
+      const optionKind = getCurrentCardOptionKind();
+      slots.push({ index: i + 1, subCount, sectionLabels, subQuestions, optionKind });
       try {
         chrome.runtime.sendMessage({
           type: "DETECT_PROGRESS",
@@ -517,6 +616,7 @@ async function runDetectAndWalk(initialSelectors) {
     walked,
     total,
     slots,
+    hasTopLevelAudio,  // 页面是否有大题共享音频输入框
     message: `已遍历 ${walked}/${total || walked} 题，了解页面结构，允许上传 Word。`,
   };
 }
@@ -576,6 +676,7 @@ const ROLE_KEYWORDS = {
   audio_file:  ["上传音频", "音频上传", "录音", "上传听力"],
   image_file:  ["上传图片", "图片上传", "图片"],
   question:    ["设置题干", "题干", "题目", "content", "question"],
+  keyword:     ["参考单词", "送评单词", "送评词", "参考词", "topickeyword", "keyword"],
   answer:      ["设置答案", "答案", "answer", "正确"],
   listening_script: ["听力原文", "原文"],  // 仅听力材料正文，不要与「解析」混用
   explanation: ["解析", "explanation"],
@@ -649,8 +750,10 @@ function getFieldLabel(el) {
       return (prev.textContent || "").trim().replace(/\s+/g, " ").slice(0, 40);
     }
   }
+  // placeholder 作为首选兜底：能直接说明输入框用途（如"请输入图片文件名"）
+  const placeholder = (el.getAttribute("placeholder") || "").trim();
   let out = (
-    el.getAttribute("placeholder") ||
+    placeholder ||
     el.getAttribute("aria-label") ||
     el.getAttribute("name") ||
     el.id || ""
@@ -666,15 +769,17 @@ function getFieldLabel(el) {
 }
 
 function getSelector(el) {
+  const getIdSelector = (raw) => {
+    if (!raw) return null;
+    const bogus = /^(undefined|null|NaN|false|true|0)$/.test(raw);
+    if (bogus) return null;
+    if (/^[a-zA-Z][\w-]*$/.test(raw)) return "#" + raw;
+    return `[id="${String(raw).replace(/"/g, '\\"')}"]`;
+  };
   // 驰声等页面常用 UUID 作 id（如 32091746-1532-1ed8-1eaa-891a75566192），以数字开头时 #id 在 CSS 中无效，改用 [id="..."]
   if (el.id) {
-    const raw = String(el.id);
-    // 跳过框架误生成的占位 id（Vue/React 在变量为 undefined 时可能渲染 id="undefined"）
-    const bogus = /^(undefined|null|NaN|false|true|0)$/.test(raw);
-    if (!bogus) {
-      if (/^[a-zA-Z][\w-]*$/.test(raw)) return "#" + raw;
-      return `[id="${raw.replace(/"/g, '\\"')}"]`;
-    }
+    const sel = getIdSelector(String(el.id));
+    if (sel) return sel;
   }
   const tag = el.tagName.toLowerCase();
   const name = el.getAttribute("name");
@@ -683,6 +788,30 @@ function getSelector(el) {
   if (el.className && typeof el.className === "string") {
     const cls = el.className.trim().split(/\s+/).filter((c) => /^[a-zA-Z][\w-]*$/.test(c));
     if (cls.length) return `${tag}.${cls.join(".")}`;
+  }
+  // 结构路径兜底：当 textarea/input 没有 id/name/class 时，生成相对稳定的 nth-of-type 选择器。
+  const seg = (node) => {
+    const t = node.tagName.toLowerCase();
+    let idx = 1;
+    let sib = node.previousElementSibling;
+    while (sib) {
+      if ((sib.tagName || "").toLowerCase() === t) idx++;
+      sib = sib.previousElementSibling;
+    }
+    return `${t}:nth-of-type(${idx})`;
+  };
+  const parts = [seg(el)];
+  let p = el.parentElement;
+  for (let depth = 0; depth < 6 && p; depth++, p = p.parentElement) {
+    if (p.hasAttribute && p.hasAttribute("data-fill-part-idx")) {
+      const idx = p.getAttribute("data-fill-part-idx");
+      return `[data-fill-part-idx="${String(idx).replace(/"/g, '\\"')}"] > ${parts.reverse().join(" > ")}`;
+    }
+    if (p.id) {
+      const idSel = getIdSelector(String(p.id));
+      if (idSel) return `${idSel} > ${parts.reverse().join(" > ")}`;
+    }
+    parts.push(seg(p));
   }
   return null;
 }
@@ -777,6 +906,13 @@ function detectForm() {
         if (sel && !seen.has(sel)) { seen.add(sel); selectors.question = sel; fields.push({ role: "question", selector: sel, label: capText }); }
       }
     }
+    if (!selectors.keyword && /参考单词|送评单词|送评词|参考词/.test(capText)) {
+      const ed = row.querySelector("textarea, input[type='text'], [contenteditable=true]");
+      if (ed) {
+        const sel = getSelector(ed);
+        if (sel && !seen.has(sel)) { seen.add(sel); selectors.keyword = sel; fields.push({ role: "keyword", selector: sel, label: capText }); }
+      }
+    }
     if (needOptions && /设置选项|选项/.test(capText)) {
       const inputs = [...row.querySelectorAll("input[type='text'], input.txt, textarea")];
       const roleByIndex = ["option_a", "option_b", "option_c", "option_d"];
@@ -835,6 +971,15 @@ function detectForm() {
     if (byPlaceholder) {
       const sel = getSelector(byPlaceholder);
       if (sel && !seen.has(sel)) { seen.add(sel); selectors.explanation = sel; fields.push({ role: "explanation", selector: sel, label: "解析" }); }
+    }
+  }
+  if (!selectors.keyword && scope) {
+    const byPlaceholder = scope.querySelector(
+      "textarea[placeholder*='参考单词'], textarea[placeholder*='送评单词'], textarea[placeholder*='送评词'], input[placeholder*='参考单词'], input[placeholder*='送评单词'], input[placeholder*='送评词']"
+    );
+    if (byPlaceholder) {
+      const sel = getSelector(byPlaceholder);
+      if (sel && !seen.has(sel)) { seen.add(sel); selectors.keyword = sel; fields.push({ role: "keyword", selector: sel, label: "参考单词" }); }
     }
   }
   // 解析：驰声页 div#analysis contenteditable
@@ -974,12 +1119,49 @@ function detectForm() {
     }
   }
 
-  // ── 识别 .audioOriginalText textarea（听力原文）──
-  if (!selectors.listening_script && scope) {
-    const el = scope.querySelector(".audioOriginalText textarea[id], .audioOriginalText textarea");
-    if (el) {
-      const sel = getSelector(el);
-      if (sel && !seen.has(sel)) { seen.add(sel); selectors.listening_script = sel; fields.push({ role: "listening_script", selector: sel, label: "听力原文" }); }
+  // ── 优先识别「顶层共享音频 URL」与「顶层共享听力原文」──
+  // 关键：必须排除 .question-part 内的小题字段，否则在「大题有共享音频 + 小题也有音频」时
+  // 顶层 role 可能误指向第 1 小题，导致共享原文/音频偶发填不进去或串位。
+  if (scope) {
+    const topAudioInput = Array.from(scope.querySelectorAll(
+      "input.audioFileName[id], input[id^='audioFileName'], input[id*='audio'][type='text'], input[class*='audioFile'], input[placeholder*='mp3'], input[placeholder*='音频'], input[placeholder*='MP3']"
+    )).find((el) => !el.closest(".question-part"));
+    if (topAudioInput) {
+      const sel = getSelector(topAudioInput);
+      if (sel) {
+        selectors.audio_url = sel;
+        const idx = fields.findIndex((f) => f.role === "audio_url");
+        if (idx >= 0) fields[idx].selector = sel;
+        else fields.push({ role: "audio_url", selector: sel, label: "共享音频URL" });
+      }
+    }
+  }
+
+  // ── 识别顶层共享听力原文 textarea（排除 .question-part 内的小题原文）──
+  if (scope) {
+    const topScriptCandidates = Array.from(scope.querySelectorAll(
+      ".audioOriginalText textarea[id], .audioOriginalText textarea, textarea.audioOriginalText, textarea[id*='originalText'], textarea[name*='originalText'], textarea[id*='script'], textarea[name*='script'], textarea[placeholder*='听力'], textarea[placeholder*='原文'], textarea[placeholder*='报告'], textarea[placeholder*='script']"
+    )).filter((el) => !el.closest(".question-part"));
+    const topScriptEl = topScriptCandidates.find((ta) => {
+      const ph = (ta.placeholder || ta.getAttribute("placeholder") || "").trim();
+      const row = ta.closest(".row, div");
+      const rowText = ((row && row.textContent) || "").slice(0, 100);
+      const lbl = row && row.querySelector("label, .label, .caption, [class*='label'], [class*='caption']");
+      const lblText = ((lbl && lbl.textContent) || "").trim();
+      const clsId = `${ta.className || ""} ${ta.id || ""} ${ta.name || ""}`;
+      return /audioOriginalText|originalText|script/i.test(clsId)
+        || /听力|原文|报告|script/i.test(ph)
+        || /听力原文|原文/.test(lblText)
+        || /听力原文|原文/.test(rowText);
+    });
+    if (topScriptEl) {
+      const sel = getSelector(topScriptEl);
+      if (sel) {
+        selectors.listening_script = sel;
+        const idx = fields.findIndex((f) => f.role === "listening_script");
+        if (idx >= 0) fields[idx].selector = sel;
+        else fields.push({ role: "listening_script", selector: sel, label: "听力原文" });
+      }
     }
   }
 
@@ -1036,18 +1218,114 @@ function detectForm() {
       part.setAttribute("data-fill-part-idx", String(partIdx));
       const partSel = `[data-fill-part-idx="${partIdx}"]`;
 
-      // 取编号：优先从 id 末尾数字，否则用 partIdx+1
-      const idMatch = (part.id || "").match(/(\d+)$/);
-      const n = idMatch ? parseInt(idMatch[1], 10) : (partIdx + 1);
+      // 始终用 partIdx+1 作 role 编号，与 blanks 数组下标对齐（0-based→1-based）。
+      // 不再使用 DOM id 尾数：DOM id 可能是 31/32 这类非连续大数，
+      // 导致 getValueForRole('blank_script_31') 去取 blanks[30] 越界返回空。
+      const n = partIdx + 1;
 
       // 参考答案 / answer
-      const answerTa = part.querySelector(".answer textarea[id], textarea.textarea[id]");
-      if (answerTa) {
+      // 注意：排除 .audioText / .audioOriginalText 内的 textarea，那是听力原文框
+      const answerTa = part.querySelector(".answer textarea[id], .standardAnswer textarea[id]")
+        || (() => {
+          // 兜底：找 class="textarea" 且有 id 的 textarea，但排除听力原文区域
+          const candidates = part.querySelectorAll("textarea.textarea[id]");
+          for (const ta of candidates) {
+            const parent = ta.closest(".audioText, .audioOriginalText, .col.audioText");
+            if (!parent) return ta; // 不在听力原文区域内，可用
+          }
+          return null;
+        })();
+      if (answerTa && !usedEls.has(answerTa)) {
+        usedEls.add(answerTa);
         const role = `blank_answer_${n}`;
         const sel = getSelector(answerTa);
         if (sel && !seen.has(sel) && !selectors[role]) {
           seen.add(sel); selectors[role] = sel;
           fields.push({ role, selector: sel, label: `第${n}小题参考答案` });
+        }
+      }
+
+      // 参考音频（audioFileName2 等，以及"支持mp3格式上传"等 placeholder 的音频输入框）
+      const audioInput = part.querySelector(
+        // 原有精确匹配
+        "input.audioFileName[id], input[id^='audioFileName'], " +
+        // 扩展：id/class 含 audio（但不含 image/filename 避免误匹配）
+        "input[id*='audio'][type='text'], input[class*='audioFile'], " +
+        // 扩展：placeholder 含 mp3 或 音频 的 text 输入框
+        "input[placeholder*='mp3'], input[placeholder*='音频'], input[placeholder*='MP3']"
+      );
+      if (audioInput && !usedEls.has(audioInput)) {
+        usedEls.add(audioInput);
+        const role = `blank_audio_${n}`;
+        const basicSel = getSelector(audioInput);
+        // 用 partSel 前缀拼接唯一选择器，与 blank_script_N 同理
+        const sel = basicSel ? `${partSel} ${basicSel}` : null;
+        if (sel && !selectors[role]) {
+          selectors[role] = sel;
+          fields.push({ role, selector: sel, label: `第${n}小题参考音频URL` });
+        }
+      }
+
+      // 听力原文（每小题的音频文字转录区域）
+      // ⚠️ 必须在 blank_question_N 前检测，优先占用该 textarea，避免被误当题干的兜底逻辑抢走
+      // 判断依据：
+      //   1. 行标题含「听力原文」/「原文」的 textarea
+      //   2. textarea 的 class/id 含 audioOriginalText / originalText / script
+      //   3. 父级 div 的 class 含 audioOriginalText
+      let scriptTa = null;
+      for (const row of Array.from(part.querySelectorAll(".row"))) {
+        const cap = row.querySelector(".col.caption, .caption, .row-caption");
+        const capText = (cap && cap.textContent || "").trim();
+        if (/听力原文|原文/.test(capText)) {
+          const ta = row.querySelector("textarea");
+          if (ta && !usedEls.has(ta)) { scriptTa = ta; break; }
+        }
+      }
+      // 兜底：按 class/id 特征查找听力原文 textarea
+      if (!scriptTa) {
+        const candidates = part.querySelectorAll(
+          ".audioOriginalText textarea, textarea.audioOriginalText, textarea[id*='originalText'], textarea[id*='script'], textarea[name*='originalText'], textarea[name*='script']"
+        );
+        for (const ta of candidates) {
+          if (!usedEls.has(ta)) { scriptTa = ta; break; }
+        }
+      }
+      // 再兜底：检查行内文字（不依赖 .caption class），扩大 textContent 检查范围
+      if (!scriptTa) {
+        for (const row of Array.from(part.querySelectorAll(".row, div"))) {
+          const rowText = (row.textContent || "").slice(0, 100);
+          if (/听力原文|原文[：:]/.test(rowText)) {
+            const ta = row.querySelector("textarea");
+            if (ta && !usedEls.has(ta)) { scriptTa = ta; break; }
+          }
+        }
+      }
+      // 最终兜底：直接检查 <label> 文字 或 textarea 的 placeholder
+      // 处理「听力原文：非必填，用于学生报告呈现」这类 placeholder 的情况
+      if (!scriptTa) {
+        for (const ta of Array.from(part.querySelectorAll("textarea"))) {
+          if (usedEls.has(ta)) continue;
+          const ph = (ta.placeholder || ta.getAttribute("placeholder") || "").trim();
+          // placeholder 含"听力"/"原文"/"报告"的均视为听力原文输入框
+          if (/听力|原文|报告|script/i.test(ph)) { scriptTa = ta; break; }
+          // 检查相邻的 <label> 文字
+          const row = ta.closest(".row, div");
+          const lbl = row && row.querySelector("label, .label, [class*='label']");
+          const lblText = (lbl && lbl.textContent || "").trim();
+          if (/听力原文|原文/.test(lblText)) { scriptTa = ta; break; }
+        }
+      }
+      if (scriptTa) {
+        // 无论是否已被宽泛扫描收入 seen，都要先把元素加入 usedEls，
+        // 防止下面 blank_question_N 的兜底逻辑把同一个 textarea 抢走
+        usedEls.add(scriptTa);
+        const role = `blank_script_${n}`;
+        const basicSel = getSelector(scriptTa);
+        // 用 partSel 前缀拼接唯一选择器，规避宽泛扫描已把 basicSel 收入 seen 的问题
+        const sel = basicSel ? `${partSel} ${basicSel}` : null;
+        if (sel && !selectors[role]) {
+          selectors[role] = sel;
+          fields.push({ role, selector: sel, label: `第${n}小题听力原文` });
         }
       }
 
@@ -1058,10 +1336,11 @@ function detectForm() {
         ".topicStem textarea, textarea.topicStem, .stem textarea, .question-stem textarea"
       ) || (() => {
         // 兜底：找不在 .answer/.standardAnswer/.topicKeyword 内的第一个 textarea
+        // 同时排除已被 blank_script_N（听力原文）或 blank_audio_N 等占用的元素
         const all = Array.from(part.querySelectorAll("textarea"));
         const answerTaEl = part.querySelector(".answer textarea, .standardAnswer textarea");
         const kwTaEl = part.querySelector(".topicKeyword textarea");
-        return all.find(t => t !== answerTaEl && t !== kwTaEl);
+        return all.find(t => t !== answerTaEl && t !== kwTaEl && !usedEls.has(t));
       })();
       if (stemTa) {
         const role = `blank_question_${n}`;
@@ -1097,27 +1376,18 @@ function detectForm() {
         }
       }
 
-      // 参考音频（audioFileName2 等）
-      const audioInput = part.querySelector("input.audioFileName[id], input[id^='audioFileName']");
-      if (audioInput) {
-        const role = `blank_audio_${n}`;
-        const sel = getSelector(audioInput);
-        if (sel && !seen.has(sel) && !selectors[role]) {
-          seen.add(sel); selectors[role] = sel;
-          fields.push({ role, selector: sel, label: `第${n}小题参考音频URL` });
-        }
-      }
-
       // 小题选项 A/B/C/D（多小题题型，选项为普通 input，按子题顺序追加到 option_a/b/c/d）
       // 使用 partSel 前缀生成唯一选择器，避免不同小题同 name 的 input 互相覆盖
+      // 注意：audio input 已经在上方通过 usedEls.add(audioInput) 标记，此处只需排除 usedEls 已占用的元素；
+      // 不再按 id/class 排除含"image"/"filename"的 input，否则图片选项（class/id 含这些关键字）会被漏掉
       const optionInputs = Array.from(part.querySelectorAll(
         "input[type='text'], input:not([type='radio']):not([type='checkbox']):not([type='file']):not([type='hidden'])"
       )).filter(inp => {
-        if (usedEls.has(inp)) return false; // 已被其他 role 使用（用元素引用，不用 selector 字符串）
+        if (usedEls.has(inp)) return false; // 已被其他 role 使用（audio/script/answer 等）
         const id = (inp.id || "").toLowerCase();
         const cls = (inp.className || "").toLowerCase();
-        return !id.includes("audio") && !id.includes("image") && !id.includes("filename")
-            && !cls.includes("audio") && !cls.includes("filename");
+        // 只排除明确属于音频域的 input（含"audio"的 id/class），保留图片选项 input
+        return !id.includes("audio") && !cls.includes("audio");
       });
       const optRoles = ["option_a", "option_b", "option_c", "option_d"];
       optionInputs.slice(0, 4).forEach((inp, idx) => {
@@ -1143,7 +1413,14 @@ function detectForm() {
     });
   }
 
-  return { selectors, fields };
+  // 检测是否存在「顶层音频输入框」（即大题共享音频，与各小题 blank_audio_N 区分）
+  // 判据：selectors 里有 audio_url，且存在 blank_audio_N（说明是多小题题型）
+  // hasTopLevelAudio = true  → 情形 B（共享对话放顶层）
+  // hasTopLevelAudio = false → 情形 A（各小题音频独立，应按段拆分）
+  const hasBlankAudio = Object.keys(selectors).some(k => /^blank_audio_\d+$/.test(k));
+  const hasTopLevelAudio = hasBlankAudio && !!(selectors.audio_url);
+
+  return { selectors, fields, hasTopLevelAudio };
 }
 
 // ── 调试桥：在页面控制台输入下方命令可查看 detectForm 检测结果 ──
@@ -1309,6 +1586,8 @@ function getCurrentFormValuesAsJson() {
     answer: answerSels.length <= 1 ? singleAnswer : (checkedAnswers.length === 1 ? checkedAnswers[0] : (checkedAnswers.length > 1 ? undefined : singleAnswer)),
     explanation: explanationTrim,
   };
+  const keyword = readFieldValue(qSel("keyword")[0]);
+  if (keyword) obj.keyword = keyword;
   const listening = readFieldValue(qSel("listening_script")[0]);
   if (listening) obj.listening_script = listening;
   if (answerSels.length > 1 && checkedAnswers.length > 1) obj.answers = answers;
@@ -1349,7 +1628,7 @@ async function getAllFormValuesAsJson() {
   return list;
 }
 
-const FILL_DEBUG_ROLES = ["listening_script", "explanation", "question", "option_a", "option_b", "option_c", "option_d", "answer"];
+const FILL_DEBUG_ROLES = ["listening_script", "question", "keyword", "explanation", "option_a", "option_b", "option_c", "option_d", "answer"];
 
 /** 调试用：不真正填充，只返回当前页检测到的选择器、每题要填的值、以及每个选择器能否找到元素 */
 function runFillDebug(questions, baseSel) {
@@ -1378,6 +1657,7 @@ function runFillDebug(questions, baseSel) {
       case "listening_script": return (q.listening_script != null ? q.listening_script : "").toString().trim();
       case "explanation": return (q.explanation || "").toString().trim();
       case "question": return (q.question || "").toString().trim();
+      case "keyword": return (q.keyword || "").toString().trim();
       case "option_a": return (opts[0] != null ? opts[0] : "").toString().trim();
       case "option_b": return (opts[1] != null ? opts[1] : "").toString().trim();
       case "option_c": return (opts[2] != null ? opts[2] : "").toString().trim();
@@ -2095,6 +2375,44 @@ async function runFill(questions, selectors, defaultAudioUrl, defaultImageUrl, d
         return ["A", "B", "C", "D"].map((k) => (arr[k] != null ? stripOptPrefix(String(arr[k]).trim()) : "")).filter(Boolean);
       return [];
     };
+    /**
+     * 将 AI 返回的值中的 <<IMG>> 占位符替换为高级设置里配置的默认图片 URL/文件名。
+     * 用于图片类型选项：AI 对图片选项统一输出 "<<IMG>>"，填充时替换为实际文件名。
+     */
+    const resolveImgPlaceholder = (val) => {
+      if (typeof val === "string" && val.trim() === "<<IMG>>") {
+        return (defaultImageUrl || "").toString().trim();
+      }
+      return val;
+    };
+
+    /**
+     * 将英文内容中的全角标点替换为半角 ASCII 等价字符。
+     * 若字符串含有汉字（CJK），视为中文内容，不做替换（中文标点在中文语境下是正确的）。
+     * 适用于 answer、listening_script、keyword 等可能夹带全角标点的字段。
+     */
+    const sanitizeAnswerChars = (s) => {
+      if (!s) return s;
+      // 含有汉字则跳过（中文内容保留原格式）
+      if (/[\u4e00-\u9fff\u3400-\u4dbf\u{20000}-\u{2a6df}]/u.test(s)) return s;
+      return s
+        .replace(/\uff0c/g, ",")   // ，→ ,
+        .replace(/\u3002/g, ".")   // 。→ .
+        .replace(/\uff1f/g, "?")   // ？→ ?
+        .replace(/\uff01/g, "!")   // ！→ !
+        .replace(/\uff1a/g, ":")   // ：→ :
+        .replace(/\uff1b/g, ";")   // ；→ ;
+        .replace(/\u2018|\u2019/g, "'")  // '' → '
+        .replace(/\u201c|\u201d/g, '"')  // "" → "
+        .replace(/\uff08/g, "(")   // （→ (
+        .replace(/\uff09/g, ")")   // ）→ )
+        .replace(/\u3010/g, "[")   // 【→ [
+        .replace(/\u3011/g, "]")   // 】→ ]
+        .replace(/\u2026/g, "...") // …→ ...
+        .replace(/\u2014/g, "-")   // —→ -
+        .replace(/\uff5e/g, "~");  // ～→ ~
+    };
+
     /** 根据「输入框用途」(role) 从题目 q 里取对应字段的值，支持 blank_*_N 动态角色 */
     const getValueForRole = (role) => {
       const opts = getOptionsArray(q);
@@ -2105,7 +2423,13 @@ async function runFill(questions, selectors, defaultAudioUrl, defaultImageUrl, d
         const idx = parseInt(blankMatch[2], 10) - 1;
         const blanks = q.blanks || [];
         const blank = blanks[idx];
-        if (!blank) return "";
+        if (!blank) {
+          // script 字段兜底到大题顶层听力原文（子题无独立原文时共享大题原文）
+          if (field === "script") return sanitizeAnswerChars((q.listening_script || "").toString().trim());
+          // audio 字段兜底到默认音频
+          if (field === "audio") return (defaultAudioUrl || "").toString().trim();
+          return "";
+        }
         if (field === "answer") {
           if (Array.isArray(blank.answer)) {
             // 从答案框的 placeholder 动态读取分隔符（如「用'#'分隔」），兜底用 #
@@ -2117,21 +2441,24 @@ async function runFill(questions, selectors, defaultAudioUrl, defaultImageUrl, d
               const sepMatch = ph.match(/用['''"](.+?)['''"]分[隔开]/);
               if (sepMatch) sep = sepMatch[1];
             } catch (_) {}
-            return blank.answer.map(a => String(a).trim()).join(sep);
+            return sanitizeAnswerChars(blank.answer.map(a => String(a).trim()).join(sep));
           }
-          return (blank.answer != null ? blank.answer : "").toString().trim();
+          return sanitizeAnswerChars((blank.answer != null ? blank.answer : "").toString().trim());
         }
-        if (field === "question") return (blank.question != null ? blank.question : "").toString().trim();
-        if (field === "keyword") return (blank.keyword != null ? blank.keyword : "").toString().trim();
+        if (field === "question") return sanitizeAnswerChars((blank.question != null ? blank.question : "").toString().trim());
+        if (field === "keyword") return sanitizeAnswerChars((blank.keyword != null ? blank.keyword : "").toString().trim());
         if (field === "audio") return (blank.audio_url || "").toString().trim() || (defaultAudioUrl || "").toString().trim();
-        if (field === "script") return (blank.listening_script || blank.script || "").toString().trim();
+        if (field === "script") return sanitizeAnswerChars(
+          (blank.listening_script || blank.script || "").toString().trim()
+          || (q.listening_script || "").toString().trim() // 子题没有独立原文时，回退到大题的听力原文
+        );
         return "";
       }
       // 听后应答题特殊处理：question→听力原文，candidates→题干
       if (q.type === "listening_response") {
         if (role === "listening_script") {
-          // 听力原文：填入音频问题（AI 返回的 question 字段）
-          return (q.question || "").toString().trim();
+          // 优先使用 AI 明确提取出的听力原文；仅在缺失时才回退到 question
+          return sanitizeAnswerChars((q.listening_script || q.question || "").toString().trim());
         }
         if (role === "question") {
           // 设置题干：填入候选项（换行分隔）
@@ -2143,26 +2470,30 @@ async function runFill(questions, selectors, defaultAudioUrl, defaultImageUrl, d
         }
       }
       switch (role) {
-        case "listening_script": return (q.listening_script != null ? q.listening_script : "").toString().trim();
-        case "explanation": return (q.explanation || "").toString().trim();
-        case "question": return (q.question || "").toString().trim();
-        case "option_a": return (opts[0] != null ? opts[0] : "").toString().trim();
-        case "option_b": return (opts[1] != null ? opts[1] : "").toString().trim();
-        case "option_c": return (opts[2] != null ? opts[2] : "").toString().trim();
-        case "option_d": return (opts[3] != null ? opts[3] : "").toString().trim();
-        case "answer": return (q.answer != null ? q.answer : "").toString().trim();
+        case "listening_script": return sanitizeAnswerChars((q.listening_script != null ? q.listening_script : "").toString().trim());
+        case "explanation": return sanitizeAnswerChars((q.explanation || "").toString().trim());
+        case "question": return sanitizeAnswerChars((q.question || "").toString().trim());
+        case "keyword": return sanitizeAnswerChars((q.keyword || "").toString().trim());
+        case "option_a": return sanitizeAnswerChars(resolveImgPlaceholder((opts[0] != null ? opts[0] : "").toString().trim()));
+        case "option_b": return sanitizeAnswerChars(resolveImgPlaceholder((opts[1] != null ? opts[1] : "").toString().trim()));
+        case "option_c": return sanitizeAnswerChars(resolveImgPlaceholder((opts[2] != null ? opts[2] : "").toString().trim()));
+        case "option_d": return sanitizeAnswerChars(resolveImgPlaceholder((opts[3] != null ? opts[3] : "").toString().trim()));
+        case "answer": return sanitizeAnswerChars((q.answer != null ? q.answer : "").toString().trim());
         // 也支持 JSON 里直接写了任意 key 的情况（AI 返回的动态字段）
-        default: return (q[role] != null ? String(q[role]).trim() : "");
+        default: return sanitizeAnswerChars(q[role] != null ? String(q[role]).trim() : "");
       }
     };
     // FILLABLE_ROLES 动态生成：取 curSel 中所有检测到的非属性字段
     const SKIP_ROLES = new Set(["grade", "course", "unit", "knowledge_point", "difficulty", "question_permission", "recorder", "audio_file", "image_file", "audio_url", "image_url", "submit_btn", "next_btn"]);
     const FILLABLE_ROLES = Object.keys(curSel).filter(r => curSel[r] && !SKIP_ROLES.has(r));
-    // 确保核心字段按合理顺序：一题多小题时 blank_question_1/2 紧跟 question，blank_answer_1/2 紧跟 answer
+    // 确保核心字段按合理顺序：一题多小题时 blank_script_1/2 紧跟 listening_script，blank_question_1/2 紧跟 question，blank_answer_1/2 紧跟 answer
     const CORE_ORDER = ["listening_script", "question", "option_a", "option_b", "option_c", "option_d", "answer", "explanation"];
     const getOrder = (r) => {
       const i = CORE_ORDER.indexOf(r);
       if (i >= 0) return i;
+      // blank_script_N（小题听力原文）紧跟 listening_script
+      const sMatch = r.match(/^blank_script_(\d+)$/);
+      if (sMatch) return 0 + parseInt(sMatch[1], 10) / 100;
       const qMatch = r.match(/^blank_question_(\d+)$/);
       if (qMatch) return 1 + parseInt(qMatch[1], 10) / 100;
       const aMatch = r.match(/^blank_answer_(\d+)$/);
@@ -2182,9 +2513,13 @@ async function runFill(questions, selectors, defaultAudioUrl, defaultImageUrl, d
       if (selectorsForRole.length === 0) continue;
       const blanks = q.blanks || [];
       const hasBlanks = blanks.length > 0;
-      // 听力原文、题干、第N小题题干、第N小题答案：先点击展开 UEditor 再填（一题多小题的题干在下面按 blanks 单独处理）
-      const isQuestionLike = role === "listening_script" || role === "question" || /^blank_question_\d+$/.test(role);
+      // 听力原文、题干、第N小题听力原文、第N小题题干、第N小题答案：先点击展开 UEditor 再填（一题多小题的题干在下面按 blanks 单独处理）
+      const isQuestionLike = role === "listening_script" || role === "question" || /^blank_(question|script)_\d+$/.test(role);
       const isBlankAnswer = /^blank_answer_\d+$/.test(role);
+      // blank_script_N / blank_audio_N 使用了 partSel 前缀选择器，Vue/React 重渲染后需重新打标
+      if (/^blank_(script|audio)_\d+$/.test(role)) {
+        try { document.querySelectorAll(".question-part").forEach((pt, pi) => pt.setAttribute("data-fill-part-idx", String(pi))); } catch (_) {}
+      }
       if ((isQuestionLike || isBlankAnswer) && !(role === "question" && hasBlanks && selectorsForRole.length >= blanks.length)) {
         const firstSel = selectorsForRole[0];
         if (firstSel) {
@@ -2262,7 +2597,7 @@ async function runFill(questions, selectors, defaultAudioUrl, defaultImageUrl, d
           const opts = Array.isArray(b?.options) ? b.options
             : (b?.option != null ? (Array.isArray(b.option) ? b.option : [b.option_a, b.option_b, b.option_c, b.option_d].filter(Boolean))
             : (Array.isArray(q.options?.[j]) ? q.options[j] : []));
-          const val = stripOptPrefix((opts[optIdx] != null ? String(opts[optIdx]).trim() : "") || "");
+          const val = resolveImgPlaceholder(stripOptPrefix((opts[optIdx] != null ? String(opts[optIdx]).trim() : "") || ""));
           const sel = selectorsForRole[j];
           log(`  j=${j} val="${val}" sel="${sel}"`);
           if (!val) { log(`  j=${j} 跳过：val为空`); continue; }
@@ -2340,7 +2675,7 @@ async function runFill(questions, selectors, defaultAudioUrl, defaultImageUrl, d
           }
           return String(b.answer).trim();
         };
-        const values = q.blanks?.length ? q.blanks.map((b, j) => blankAnswerToStr(b, j)) : q.answers.map((v) => (v != null ? String(v).trim() : ""));
+        const values = (q.blanks?.length ? q.blanks.map((b, j) => blankAnswerToStr(b, j)) : q.answers.map((v) => (v != null ? String(v).trim() : ""))).map(sanitizeAnswerChars);
         for (let j = 0; j < values.length; j++) {
           const sel = selectorsForRole[j];
           if (!sel || !values[j]) continue;
@@ -2349,7 +2684,7 @@ async function runFill(questions, selectors, defaultAudioUrl, defaultImageUrl, d
           if (ok) await delay(80);
         }
       } else if (role === "answer") {
-        const value = getValueForRole(role);
+        const value = sanitizeAnswerChars(getValueForRole(role));
         if (!value) { log(`  skip answer (无值)`); continue; }
         // 优先路径：selector 是容器(div.ui-radio)，fillField 内部处理 label 点击
         const firstEl = (() => { try { return document.querySelector(selectorsForRole[0]); } catch(_) { return null; } })();
@@ -2384,6 +2719,10 @@ async function runFill(questions, selectors, defaultAudioUrl, defaultImageUrl, d
       } else {
         const value = getValueForRole(role);
         if (!value) { log(`  skip ${role} (无值)`); continue; }
+        // blank_script_N / blank_audio_N 用 partSel 前缀选择器，Vue/React 可能在 await delay 后清除属性，再次打标
+        if (/^blank_(script|audio)_\d+$/.test(role)) {
+          try { document.querySelectorAll(".question-part").forEach((pt, pi) => pt.setAttribute("data-fill-part-idx", String(pi))); } catch (_) {}
+        }
         // blank_audio_N：填入文本框后派发 blur（与 audio_url 同逻辑）
         if (/^blank_audio_\d+$/.test(role)) {
           for (const s of selectorsForRole) {
@@ -2500,12 +2839,15 @@ async function runFill(questions, selectors, defaultAudioUrl, defaultImageUrl, d
         }
       }
       if (!topicChanged) {
-        log("警告：15秒内左侧题号未变化，可能保存失败（未填题目属性等），停止填充");
-        notify(`第 ${i + 1} 题保存后未跳转到下一题，已停止（请检查是否未填题目属性）`);
+        log(`警告：15秒内左侧题号未变化，第 ${i + 1} 题可能保存失败（可能有必填项未填，如音频）`);
+        notify(`第 ${i + 1} 题保存未自动跳转，已暂停。请手动补全后点弹窗「继续填充」`);
+        // 将剩余题目（不含当前失败的题）返回给 popup，由用户手动修复后点「继续填充」
         return {
-          ok: false,
+          ok: "paused",
           filled,
-          error: "保存后未自动跳转，可能未填题目属性或网络较慢，请补全后重试。",
+          pausedQuestion: i + 1,       // 1-based，展示给用户
+          remaining: questions.slice(i + 1), // 剩余待填题目
+          error: `第 ${i + 1} 题保存后未自动跳转，可能有必填项（如音频）未填。`,
         };
       }
       // 题号切换后再等 500ms，让新题表单完成渲染

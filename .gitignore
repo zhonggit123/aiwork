@@ -4,3 +4,5 @@ __pycache__/
 .venv/
 venv/
 .env
+extension/icons/node_modules/
+extension/icons/node_modules/

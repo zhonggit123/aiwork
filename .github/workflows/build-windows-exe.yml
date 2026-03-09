@@ -1,0 +1,38 @@
+# 在 GitHub 的 Windows 虚拟机上打包出 Windows .exe，无需本地有 Windows
+# 用法：推送代码后，在 GitHub 网页 Actions 里运行该 workflow，完成后在 Run 里下载 Artifacts
+
+name: 打包 Windows exe
+
+on:
+  workflow_dispatch:   # 在 Actions 页手动点 "Run workflow" 即可触发
+  push:
+    tags:
+      - 'v*'           # 也可用 tag 触发，例如 git tag v1.0 && git push --tags
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 设置 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: 安装依赖
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: 打包 exe
+        run: |
+          pyinstaller 题库后端.spec
+
+      - name: 上传 exe 为 Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: 题库后端-Windows
+          path: dist/题库后端.exe

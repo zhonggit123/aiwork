@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "题库自动填表",
-  "version": "3.0",
+  "version": "4.0",
   "description": "在录题页面粘贴题目 JSON，一键填充表单",
   "icons": {
     "16": "icons/icon16.png",
