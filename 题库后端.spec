@@ -10,6 +10,8 @@ block_cipher = None
 # 需打包的 Python 模块
 main_scripts = ['run_server.py']
 hidden_imports = [
+    'app',  # uvicorn 通过字符串 "app:app" 加载，必须显式加入否则 exe 内找不到
+    'word_reader', 'llm_extract', 'submit_api',
     'uvicorn.logging', 'uvicorn.loops', 'uvicorn.loops.auto', 'uvicorn.protocols',
     'uvicorn.protocols.http', 'uvicorn.protocols.http.auto', 'uvicorn.protocols.websockets',
     'uvicorn.protocols.websockets.auto', 'uvicorn.lifespan', 'uvicorn.lifespan.on',
