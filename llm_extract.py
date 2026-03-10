@@ -83,10 +83,11 @@ def _format_dialogue_script(text: str) -> str:
     """将 W:/M: 对话型听力原文按说话人分行，方便在页面多行文本框中显示。"""
     if not text or not isinstance(text, str):
         return text or ""
-    # 在 W:/M:/Boy:/Girl:/Man:/Woman:/Q:/A: 等说话人标记前插入换行（首次出现不加）
     import re as _re
+    # 说话人标记前插入换行：支持有/无空格（W:Was 和 W: Was 两种格式）
+    # 匹配：W: M: Boy: Girl: Man: Woman: Narrator: Q: Qs: A: 以及常见中文/英文人名缩写
     formatted = _re.sub(
-        r'(?<=[^\n])\s+(W:|M:|Boy:|Girl:|Man:|Woman:|Narrator:|Q:|Qs?:|A:)(?=\s)',
+        r'(?<=[^\n])\s*(W:|M:|Boy:|Girl:|Man:|Woman:|Narrator:|Qs?:|Q\d+\.|[A-Z][a-z]{1,9}:)',
         r'\n\1', text
     )
     return formatted.strip()
@@ -259,16 +260,28 @@ def _normalize_questions(questions: List[Dict[str, Any]]) -> List[Dict[str, Any]
             # 规则：共享脚本→顶层 q.listening_script；blank.listening_script 改为
             #       该小题的 blank.question（题目读出的问题句），否则置空。
             blank_scripts = [b.get("listening_script", "") for b in q["blanks"] if isinstance(b, dict)]
+            top_script = (q.get("listening_script") or "").strip()
             if (blank_scripts
                     and all(s == blank_scripts[0] for s in blank_scripts)
                     and len(blank_scripts[0]) > 30):
                 shared = blank_scripts[0]
                 # 仅在顶层确实为空时才提升，避免覆盖已正确填入的顶层原文
-                if not (q.get("listening_script") or "").strip():
+                if not top_script:
                     q["listening_script"] = shared
                 for blank in q["blanks"]:
                     if isinstance(blank, dict):
                         # 用 blank.question 作为小题专属脚本（如果它比共享脚本短很多）
+                        bq = (blank.get("question") or "").strip()
+                        blank["listening_script"] = bq if (bq and len(bq) < len(shared) * 0.5) else ""
+            # 情形B兜底：顶层为空 + blank[0]的script明显比其他blank长得多，说明AI把共享对话塞进了blank[0]
+            elif (not top_script
+                  and blank_scripts
+                  and len(blank_scripts[0]) > 60
+                  and len(blank_scripts[0]) > sum(len(s) for s in blank_scripts[1:]) * 2):
+                shared = blank_scripts[0]
+                q["listening_script"] = shared
+                for i, blank in enumerate(q["blanks"]):
+                    if isinstance(blank, dict):
                         bq = (blank.get("question") or "").strip()
                         blank["listening_script"] = bq if (bq and len(bq) < len(shared) * 0.5) else ""
 
@@ -524,6 +537,33 @@ def build_system_prompt(
 只输出这一组 JSON 数组，不要 markdown 代码块包裹，不要其他说明。"""
 
 
+def _repair_json(text: str) -> str:
+    """简单修复 LLM 常见 JSON 错误：字符串内的裸换行替换为 \\n。"""
+    # 用状态机扫描，将 JSON 字符串内出现的裸换行/制表符替换为转义形式
+    result = []
+    in_string = False
+    escape_next = False
+    for ch in text:
+        if escape_next:
+            result.append(ch)
+            escape_next = False
+        elif ch == "\\":
+            result.append(ch)
+            escape_next = True
+        elif ch == '"':
+            result.append(ch)
+            in_string = not in_string
+        elif in_string and ch == "\n":
+            result.append("\\n")
+        elif in_string and ch == "\r":
+            result.append("\\r")
+        elif in_string and ch == "\t":
+            result.append("\\t")
+        else:
+            result.append(ch)
+    return "".join(result)
+
+
 def extract_json_from_response(content: str) -> List[Dict[str, Any]]:
     """从模型回复中剥离并解析 JSON 数组。"""
     content = content.strip()
@@ -532,19 +572,31 @@ def extract_json_from_response(content: str) -> List[Dict[str, Any]]:
         match = re.search(r"```(?:json)?\s*([\s\S]*?)```", content)
         if match:
             content = match.group(1).strip()
-    try:
-        data = json.loads(content)
+
+    def _try_parse(s: str):
+        try:
+            data = json.loads(s)
+        except json.JSONDecodeError:
+            data = json.loads(_repair_json(s))
         if isinstance(data, list):
             return data
         if isinstance(data, dict) and "questions" in data:
             return data["questions"]
         return [data]
+
+    try:
+        return _try_parse(content)
     except json.JSONDecodeError:
         # 尝试找到第一个 [ 到最后一个 ] 之间的内容
         start = content.find("[")
         end = content.rfind("]") + 1
         if start >= 0 and end > start:
-            return json.loads(content[start:end])
+            try:
+                return _try_parse(content[start:end])
+            except json.JSONDecodeError as e2:
+                print(f"[JSON解析失败] {e2}\n--- LLM 原始回复（前3000字）---\n{content[:3000]}\n--- end ---", flush=True)
+                raise
+        print(f"[JSON解析失败] 未找到JSON数组\n--- LLM 原始回复（前3000字）---\n{content[:3000]}\n--- end ---", flush=True)
         raise
 
 
@@ -878,10 +930,19 @@ def _system_prompt_with_total(base_prompt: str, paper_metadata: Dict[str, Any] |
             except (TypeError, ValueError):
                 sub = 1
             
-            # 从 sectionLabels 推断题型（最可靠）
+            # ── 调试日志：打印每题关键字段，便于排查 placeholder 是否传入 ──
+            print(
+                f"[slot#{idx}] keys={list(s.keys())} "
+                f"answerPhs={s.get('answerPlaceholders')} "
+                f"qPhs={s.get('qPlaceholders')} "
+                f"currentSlotFields(roles)={[f.get('role') for f in (s.get('currentSlotFields') or [])]}",
+                flush=True,
+            )
+
+            # 从 sectionLabels 建立标签集合
             section_labels = s.get("sectionLabels") or []
             labels_set = set(section_labels) if isinstance(section_labels, list) else set()
-            
+
             # 题型只使用页面 HTML 中明确读到的值（typeHint / typeCode），
             # 不做任何推断——平台有200+题型，靠 sectionLabels 猜类型容易出错，
             # 含：/禁：字段约束已经足够告诉 AI 该填什么。
@@ -936,6 +997,10 @@ def _system_prompt_with_total(base_prompt: str, paper_metadata: Dict[str, Any] |
                     lbl = role_label.get(f"blank_answer_{n}") or role_label.get("answer") or ""
                     return lbl[:60] if lbl and len(lbl) > 4 and lbl.strip().upper() not in {"A","B","C","D"} else ""
                 
+                # 检查小题是否也有听力原文字段（与顶层同名但含义不同）
+                sq_has_script = first_sq_labels and "听力原文" in first_sq_labels
+                top_has_script = "听力原文" in labels_set
+
                 if all_same_structure and first_sq_labels:
                     sq_components = [l for l in ["上传音频", "听力原文", "题干", "参考单词", "设置选项", "设置答案"] if l in first_sq_labels]
                     sq_part = f"共{sub}小题，每小题含：{'/'.join(sq_components)}" if sq_components else f"共{sub}小题，结构相同"
@@ -960,6 +1025,10 @@ def _system_prompt_with_total(base_prompt: str, paper_metadata: Dict[str, Any] |
                             sq_descs.append(sq_desc)
                         if sq_descs:
                             desc_parts.append("；".join(sq_descs))
+
+                # 两层都有听力原文时，明确区分用途，避免 AI 把共享对话塞进小题
+                if sq_has_script and top_has_script:
+                    desc_parts.append("注：大题听力原文=共享对话，小题听力原文=该小题提问句或空")
             
             # 图片选项：简洁告知
             if is_image_option:
@@ -994,7 +1063,9 @@ def _system_prompt_with_total(base_prompt: str, paper_metadata: Dict[str, Any] |
                     if key in labels_set:
                         main_components.append(disp)
             if main_components:
-                desc_parts.append(f"含：{'/'.join(main_components)}")
+                # 多小题时用"大题含："，明确区分顶层字段与小题字段
+                prefix = "大题含：" if sub > 1 else "含："
+                desc_parts.append(f"{prefix}{'/'.join(main_components)}")
             
             # 针对本槽位，将"含："里没有的关键字段明确标注为禁止填写
             # 这样 AI 拿到的是每道题专属的字段禁令，而不只是全局通用规则
@@ -1040,8 +1111,8 @@ def _system_prompt_with_total(base_prompt: str, paper_metadata: Dict[str, Any] |
         
         if parts:
             hint += "【录题页结构】" + "；".join(parts) + "。\n"
-            hint += "【字段约束（重要）】每道题只能输出其「含：」列表中列出的字段内容；列表中**没有**的字段必须输出空值（listening_script=\"\"，options=[]，answer=\"\"，blanks=[]，keyword=\"\"）。例如某题「含：上传音频/题干/题目属性/解析」，则该题 listening_script 必须为 \"\"，不得填入任何内容。\n"
-            hint += "【重要】多小题的题只输出一条，用 blanks 数组存放各小题的 {question, keyword, answer, options, listening_script}。\n"
+            hint += "【字段约束（重要）】每道题只能输出其「含：」或「大题含：」列表中列出的字段内容；列表中**没有**的字段必须输出空值（listening_script=\"\"，options=[]，answer=\"\"，blanks=[]，keyword=\"\"）。例如某题「含：上传音频/题干/题目属性/解析」，则该题 listening_script 必须为 \"\"，不得填入任何内容。\n"
+            hint += "【重要】多小题的题只输出一条，用 blanks 数组存放各小题的 {question, keyword, answer, options, listening_script}；「大题含：听力原文」表示共享对话填顶层 listening_script，各 blank.listening_script 填该小题提问句或空。\n"
     
     if not hint:
         return base_prompt

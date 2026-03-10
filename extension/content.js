@@ -624,54 +624,45 @@ async function runDetectAndWalk(initialSelectors) {
       const subQuestions = subCount > 1 ? (getSubQuestionDetails() || []) : [];
       const optionKind = getCurrentCardOptionKind();
 
-      // 读取题型提示：从 paperEnter-title 或相邻文字中提取题型关键词
+      // 读取题型提示：直接读 .paperEnter-title 文字，去掉大节编号和括号注释，保留核心题型名
       let typeHint = "";
-      const TYPE_KEYWORDS = [
-        "听后选择", "听后应答", "听后转述", "听后记录", "听后填空",
-        "模仿朗读", "交际朗读", "短文朗读", "句子朗读", "单词朗读",
-        "信息转述", "信息记录", "表格填空", "话题表达", "情景问答",
-        "单选", "多选", "判断", "填空", "朗读", "转述", "复述"
-      ];
-      const extractTypeKeyword = (text) => {
-        if (!text) return "";
-        for (const kw of TYPE_KEYWORDS) {
-          if (text.includes(kw)) return kw;
-        }
-        return "";
+      const _readTitleText = (el) => {
+        if (!el) return "";
+        let raw = (el.textContent || "").trim();
+        // 去掉 "第X部分 " 前缀
+        raw = raw.replace(/^第[一二三四五六七八九十百\d]+部分\s*/u, "");
+        // 去掉 "一、" / "（一）" 等序号前缀
+        raw = raw.replace(/^[一二三四五六七八九十百]+[、.．。]\s*/u, "");
+        raw = raw.replace(/^[（(][一二三四五六七八九十]+[）)]\s*/u, "");
+        // 去掉括号内的注释（如"共15小题，每小题1分，共15分"），避免嵌套括号破坏 prompt 格式
+        raw = raw.replace(/[（(][^）)]*[）)]/gu, "").trim();
+        return raw.slice(0, 20);
       };
       const numEl_i = numbers[i];
       if (numEl_i) {
-        // 方法1：从题号元素向上找 paperEnter-main（题号在内容区时有效）
+        // 方法1：从题号元素向上找 paperEnter-main，读其 .paperEnter-title
         let anc = numEl_i.parentElement;
         while (anc) {
           if (anc.classList && anc.classList.contains("paperEnter-main")) {
             const titleEl = anc.querySelector(".paperEnter-title");
-            if (titleEl) typeHint = extractTypeKeyword((titleEl.textContent || "").trim());
+            if (titleEl) typeHint = _readTitleText(titleEl);
             break;
           }
           anc = anc.parentElement;
         }
-        // 方法2：向上 5 层看相邻元素文字（兜底）
-        if (!typeHint) {
-          let p = numEl_i.parentElement;
-          for (let up = 0; up < 5 && p; up++, p = p.parentElement) {
-            const prev = p.previousElementSibling;
-            const t = (prev ? prev.textContent : p.textContent || "").trim();
-            if (t && t.length < 80) { typeHint = extractTypeKeyword(t); if (typeHint) break; }
-          }
-        }
       }
-      // 方法3：题号在导航栏外时，点击后直接查当前内容区的大节标题
+      // 方法2：直接查当前内容区的大节标题（题号在导航栏外时）
       if (!typeHint) {
         const titleEl = document.querySelector(".paperEnter-main .paperEnter-title, #topic-section .paperEnter-title, .paperEnter-title");
-        if (titleEl) typeHint = extractTypeKeyword((titleEl.textContent || "").trim());
+        if (titleEl) typeHint = _readTitleText(titleEl);
       }
 
-      // 采集 answer / question 输入框的 placeholder，告知 AI 答案格式要求
+      // 采集当前题答案框 / 题干框的 placeholder（用 result.selectors 而非全局累积 selectors）
       const answerPlaceholders = [];
       const qPlaceholders = [];
+      const _curSelectors = result.selectors || {};
       for (const [role, phArr] of [["answer", answerPlaceholders], ["question", qPlaceholders]]) {
-        const sel = selectors[role] || "";
+        const sel = _curSelectors[role] || "";
         if (!sel) continue;
         sel.split(",").map(s => s.trim()).filter(Boolean).forEach(s => {
           try {
@@ -2661,26 +2652,49 @@ async function runFill(questions, selectors, defaultAudioUrl, defaultImageUrl, d
             await delay(120);
           }
         }
+        // 顶层填充后等待页面稳定，再重打 data-fill-part-idx 标记
+        await delay(300);
+        try { document.querySelectorAll(".question-part").forEach((pt, pi) => pt.setAttribute("data-fill-part-idx", String(pi))); } catch (_) {}
+        await delay(100);
         for (let j = 0; j < blanks.length; j++) {
           const val = (blanks[j] && (blanks[j].listening_script != null || blanks[j].script != null) ? String(blanks[j].listening_script || blanks[j].script || "").trim() : "") || "";
           const sel = curSel[`blank_script_${j + 1}`];
+          log(`  blank_script_${j + 1}: sel=${sel || "(null)"} val="${val.slice(0,30)}"`);
           if (!sel) { log(`  skip blank_script_${j + 1} (无选择器)`); continue; }
-          // 每次填前重新打标，防止顶层填充后 Vue/React 重渲染清掉 data-fill-part-idx 属性
+          if (!val) { log(`  skip blank_script_${j + 1} (值为空)`); continue; }
+          // 每次填前重新打标
           try { document.querySelectorAll(".question-part").forEach((pt, pi) => pt.setAttribute("data-fill-part-idx", String(pi))); } catch (_) {}
-          try {
-            const fieldEl = document.querySelector(sel);
-            if (fieldEl) {
-              if (fieldEl.scrollIntoView) fieldEl.scrollIntoView({ block: "nearest", behavior: "auto" });
-              await delay(j > 0 ? 150 : 100);
-              const row = fieldEl.closest && fieldEl.closest(".row");
+          // 找目标元素：先用存储的选择器，失败时在第 j 个 .question-part 里按 placeholder 特征兜底
+          let targetEl = null;
+          try { targetEl = document.querySelector(sel); } catch (_) {}
+          if (!targetEl) {
+            try {
+              const parts = document.querySelectorAll(".question-part");
+              const part = parts[j];
+              if (part) {
+                targetEl = Array.from(part.querySelectorAll("textarea")).find(ta => {
+                  const ph = (ta.getAttribute("placeholder") || "").toLowerCase();
+                  return /听力|原文|报告|script/i.test(ph);
+                }) || null;
+                if (targetEl) log(`  blank_script_${j + 1} fallback via placeholder OK`);
+              }
+            } catch (_) {}
+          }
+          log(`  blank_script_${j + 1} element found: ${!!targetEl}`);
+          if (targetEl) {
+            try {
+              if (targetEl.scrollIntoView) targetEl.scrollIntoView({ block: "nearest", behavior: "auto" });
+              await delay(j > 0 ? 200 : 150);
+              const row = targetEl.closest && targetEl.closest(".row");
               const ueditorShow = row && row.querySelector(".ueditor-show");
-              if (ueditorShow && ueditorShow.click) { ueditorShow.click(); await delay(400); }
-              else { (fieldEl.previousElementSibling || fieldEl.parentElement || fieldEl).click?.(); fieldEl.focus(); await delay(350); }
-            }
-          } catch (_) {}
-          const ok = fillField(sel, val);
+              if (ueditorShow && ueditorShow.click) { ueditorShow.click(); await delay(450); }
+              else { (targetEl.previousElementSibling || targetEl.parentElement || targetEl).click?.(); targetEl.focus(); await delay(400); }
+            } catch (_) {}
+          }
+          const fillSel = targetEl ? (targetEl.id ? `#${CSS.escape(targetEl.id)}` : sel) : sel;
+          const ok = fillField(fillSel, val);
           log(`  fill blank_script_${j + 1} => ${ok ? "ok" : "fail"} len=${val.length}`);
-          if (ok) await delay(100);
+          if (ok) await delay(120);
         }
         continue;
       }
