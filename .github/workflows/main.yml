@@ -27,5 +27,5 @@ jobs:
       - name: 上传 exe
         uses: actions/upload-artifact@v4
         with:
-          name: 题库后端-Windows
+          name: QuestionBank-Backend-Windows
           path: dist/题库后端.exe

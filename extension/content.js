@@ -293,7 +293,7 @@ const SECTION_LABEL_PATTERNS = [
   { pattern: /上传音频/i, label: "上传音频" },
   { pattern: /听力原文|原文\s*[：:]?/i, label: "听力原文" },
   { pattern: /设置题干|题干/i, label: "题干" },
-  { pattern: /参考单词|送评单词|送评词|参考词/i, label: "参考单词" },
+  { pattern: /参考单词|送评单词|送评词|参考词|关键字/i, label: "参考单词" },
   { pattern: /图片选项|选项.*图片|option.*image/i, label: "图片选项" },
   { pattern: /设置选项|选项\s*[A-D]?/i, label: "设置选项" },
   { pattern: /设置答案|答案/i, label: "设置答案" },
@@ -602,6 +602,7 @@ async function runDetectAndWalk(initialSelectors) {
           walked,
           total,
           fields: Object.keys(selectors).filter((k) => selectors[k]),
+          currentSectionLabels: sectionLabels,
         });
       } catch (_) {}
     }
@@ -676,7 +677,7 @@ const ROLE_KEYWORDS = {
   audio_file:  ["上传音频", "音频上传", "录音", "上传听力"],
   image_file:  ["上传图片", "图片上传", "图片"],
   question:    ["设置题干", "题干", "题目", "content", "question"],
-  keyword:     ["参考单词", "送评单词", "送评词", "参考词", "topickeyword", "keyword"],
+  keyword:     ["参考单词", "送评单词", "送评词", "参考词", "topickeyword", "keyword", "关键字"],
   answer:      ["设置答案", "答案", "answer", "正确"],
   listening_script: ["听力原文", "原文"],  // 仅听力材料正文，不要与「解析」混用
   explanation: ["解析", "explanation"],

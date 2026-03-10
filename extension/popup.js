@@ -5,7 +5,7 @@ const whenNotDetected = document.getElementById("whenNotDetected");
 const statusBadge = document.getElementById("statusBadge");
 
 /** 分析页面卡片图标：放大镜（默认与已分析态） */
-const DETECT_ICON_MAGNIFIER = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>`;
+const DETECT_ICON_MAGNIFIER = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>`;
 
 /**
  * 根据已识别字段列表生成「题型与结构」的友好描述，用于遍历进度展示（识别中）。
@@ -336,7 +336,11 @@ chrome.runtime.onMessage.addListener((msg) => {
   if (resultEl) resultEl.style.display = "block";
   if (msg.type === "DETECT_PROGRESS") {
     const total = msg.total ? `/${msg.total}` : "";
-    const desc = describeStructureFromFields(msg.fields || []);
+    // 优先展示当前题自身的区块标签（实时反映本题结构），无则退回累计字段描述
+    const currentLabels = msg.currentSectionLabels;
+    const desc = (currentLabels && currentLabels.length > 0)
+      ? currentLabels.join("、")
+      : describeStructureFromFields(msg.fields || []);
     setDetectResultSimple(`正在遍历第 ${msg.walked}${total} 题 · ${desc}`, "text-muted");
     if (!resultEl) return;
     

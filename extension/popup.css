@@ -520,24 +520,51 @@ main {
   background: transparent;
 }
 
-/* 第一步执行中：分析中动画 */
-@keyframes card-analyzing {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.25); }
-  50% { box-shadow: 0 0 0 6px rgba(16, 185, 129, 0); }
+/* 第一步执行中：分析中卡片外发光波纹动效 */
+@keyframes card-analyzing-pulse {
+  0%, 100% { 
+    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.3), inset 0 0 0 1px rgba(16, 185, 129, 0.1); 
+  }
+  50% { 
+    box-shadow: 0 0 0 8px rgba(16, 185, 129, 0), inset 0 0 0 1px rgba(16, 185, 129, 0.4); 
+  }
 }
 #detect.is-analyzing {
-  animation: card-analyzing 1.6s ease-in-out infinite;
+  animation: card-analyzing-pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  background: linear-gradient(152deg, #1e2d28 0%, #1a2522 100%);
 }
 
-/* 分析中：放大镜「查找」动效（轻微缩放 + 位移，像在找东西） */
-@keyframes card-icon-magnifier-search {
-  0%, 100% { transform: scale(1) translate(0, 0); opacity: 1; }
-  25% { transform: scale(1.06) translate(1px, -1px); opacity: 0.9; }
-  50% { transform: scale(1.1) translate(-1px, 1px); opacity: 1; }
-  75% { transform: scale(1.04) translate(0.5px, 0.5px); opacity: 0.95; }
+/* 分析中：放大镜「扫描」动效（带旋转和浮动，发光） */
+@keyframes card-icon-magnifier-scan {
+  0% { 
+    transform: scale(1) translate(0, 0) rotate(0deg); 
+    opacity: 0.85; 
+    filter: drop-shadow(0 0 2px rgba(16, 185, 129, 0.2)); 
+  }
+  25% { 
+    transform: scale(1.15) translate(2px, -2px) rotate(10deg); 
+    opacity: 1; 
+    filter: drop-shadow(0 0 8px rgba(52, 211, 153, 0.8)); 
+  }
+  50% { 
+    transform: scale(1.05) translate(-2px, 1px) rotate(-5deg); 
+    opacity: 0.9; 
+    filter: drop-shadow(0 0 4px rgba(16, 185, 129, 0.5)); 
+  }
+  75% { 
+    transform: scale(1.15) translate(1px, 2px) rotate(8deg); 
+    opacity: 1; 
+    filter: drop-shadow(0 0 8px rgba(52, 211, 153, 0.8)); 
+  }
+  100% { 
+    transform: scale(1) translate(0, 0) rotate(0deg); 
+    opacity: 0.85; 
+    filter: drop-shadow(0 0 2px rgba(16, 185, 129, 0.2)); 
+  }
 }
 #detect.is-analyzing .card-icon.card-icon--searching {
-  animation: card-icon-magnifier-search 1.4s ease-in-out infinite;
+  animation: card-icon-magnifier-scan 2s ease-in-out infinite;
+  color: var(--brand-green);
 }
 #detect.is-analyzing .card-icon.card-icon--searching svg {
   display: block;
@@ -545,25 +572,51 @@ main {
 
 /* 第二步执行中：「解析并填入」卡片识别中呼吸动画 */
 @keyframes card-parsing-breathe {
-  0%, 100% { opacity: 0.85; box-shadow: 0 4px 12px -2px rgb(17 24 39 / 0.06), 0 0 0 0 rgba(16, 185, 129, 0.3); }
-  50% { opacity: 1; box-shadow: 0 6px 16px -4px rgb(17 24 39 / 0.1), 0 0 0 8px rgba(16, 185, 129, 0); }
+  0%, 100% { box-shadow: 0 4px 12px -2px rgb(17 24 39 / 0.06), 0 0 0 0 rgba(16, 185, 129, 0.3); }
+  50% { box-shadow: 0 6px 16px -4px rgb(17 24 39 / 0.1), 0 0 0 8px rgba(16, 185, 129, 0); }
 }
 #uploadAndFill.is-parsing {
   animation: card-parsing-breathe 2s ease-in-out infinite;
+  background: linear-gradient(152deg, #1e2d28 0%, #1a2522 100%);
 }
 #uploadAndFill.is-parsing .card-title {
   color: var(--brand-green);
 }
 
-/* 识别中：闪电图标动效（闪动，呼吸幅度较大） */
+/* 识别中：闪电图标动效（雷电急促闪烁发光） */
 @keyframes card-icon-lightning {
-  0%, 100% { opacity: 1; transform: scale(1); filter: brightness(1); }
-  25% { opacity: 0.6; transform: scale(1.2); filter: brightness(1.5); }
-  50% { opacity: 1; transform: scale(1); filter: brightness(1); }
-  75% { opacity: 0.75; transform: scale(1.12); filter: brightness(1.3); }
+  0%, 100% { 
+    opacity: 0.8; 
+    transform: scale(0.95); 
+    filter: drop-shadow(0 0 2px rgba(16, 185, 129, 0.3)); 
+  }
+  10%, 30% { 
+    opacity: 1; 
+    transform: scale(1.15) rotate(-3deg); 
+    filter: drop-shadow(0 0 10px rgba(52, 211, 153, 0.9)); 
+    color: #34d399; 
+  }
+  20% { 
+    opacity: 0.85; 
+    transform: scale(1) rotate(0deg); 
+    filter: drop-shadow(0 0 4px rgba(16, 185, 129, 0.6)); 
+    color: var(--brand-green); 
+  }
+  40% {
+    opacity: 1; 
+    transform: scale(1.15) rotate(3deg); 
+    filter: drop-shadow(0 0 12px rgba(52, 211, 153, 0.9)); 
+    color: #34d399; 
+  }
+  50%, 90% { 
+    opacity: 0.9; 
+    transform: scale(1) rotate(0deg); 
+    filter: drop-shadow(0 0 4px rgba(16, 185, 129, 0.5)); 
+    color: var(--brand-green); 
+  }
 }
 #uploadAndFill.is-parsing .card-icon.card-icon--parsing {
-  animation: card-icon-lightning 1.2s ease-in-out infinite;
+  animation: card-icon-lightning 2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
   color: var(--brand-green);
 }
 #uploadAndFill.is-parsing .card-icon.card-icon--parsing svg {
@@ -675,14 +728,20 @@ main {
 
 /* 第二步执行中：整条识别区动效（上传区 + 下方绿色状态条） */
 @keyframes dropzone-parsing {
-  0%, 100% { border-color: rgba(16, 185, 129, 0.35); background: rgba(16, 185, 129, 0.04); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.1); }
-  50% { border-color: rgba(16, 185, 129, 0.6); background: rgba(16, 185, 129, 0.1); box-shadow: 0 0 12px 2px rgba(16, 185, 129, 0.08); }
+  0%, 100% { 
+    border-color: rgba(16, 185, 129, 0.4); 
+    background: rgba(16, 185, 129, 0.04); 
+    box-shadow: inset 0 0 0 1px rgba(16, 185, 129, 0.1), 0 0 8px 0 rgba(16, 185, 129, 0.05); 
+  }
+  50% { 
+    border-color: rgba(16, 185, 129, 0.8); 
+    background: rgba(16, 185, 129, 0.08); 
+    box-shadow: inset 0 0 0 1px rgba(16, 185, 129, 0.2), 0 0 16px 2px rgba(16, 185, 129, 0.15); 
+  }
 }
 .drop-zone.is-parsing {
   pointer-events: none;
-  background: rgba(16, 185, 129, 0.04);
-  border-color: rgba(16, 185, 129, 0.35);
-  animation: dropzone-parsing 1.8s ease-in-out infinite;
+  animation: dropzone-parsing 2.5s ease-in-out infinite;
 }
 
 /* 「正在豆包识别…」绿色横条动效 */
