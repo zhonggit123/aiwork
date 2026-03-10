@@ -2573,8 +2573,10 @@ async function runFill(questions, selectors, defaultAudioUrl, defaultImageUrl, d
         }
         for (let j = 0; j < blanks.length; j++) {
           const val = (blanks[j] && (blanks[j].listening_script != null || blanks[j].script != null) ? String(blanks[j].listening_script || blanks[j].script || "").trim() : "") || "";
-          const sel = curSel[`blank_script_${j + 1}`] || (selectorsForRole.length > j ? selectorsForRole[j] : null);
+          const sel = curSel[`blank_script_${j + 1}`];
           if (!sel) { log(`  skip blank_script_${j + 1} (无选择器)`); continue; }
+          // 每次填前重新打标，防止顶层填充后 Vue/React 重渲染清掉 data-fill-part-idx 属性
+          try { document.querySelectorAll(".question-part").forEach((pt, pi) => pt.setAttribute("data-fill-part-idx", String(pi))); } catch (_) {}
           try {
             const fieldEl = document.querySelector(sel);
             if (fieldEl) {
