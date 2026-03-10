@@ -1029,6 +1029,7 @@ def _system_prompt_with_total(base_prompt: str, paper_metadata: Dict[str, Any] |
         
         if parts:
             hint += "【录题页结构】" + "；".join(parts) + "。\n"
+            hint += "【字段约束（重要）】每道题只能输出其「含：」列表中列出的字段内容；列表中**没有**的字段必须输出空值（listening_script=\"\"，options=[]，answer=\"\"，blanks=[]，keyword=\"\"）。例如某题「含：上传音频/题干/题目属性/解析」，则该题 listening_script 必须为 \"\"，不得填入任何内容。\n"
             hint += "【重要】多小题的题只输出一条，用 blanks 数组存放各小题的 {question, keyword, answer, options, listening_script}。\n"
     
     if not hint:
