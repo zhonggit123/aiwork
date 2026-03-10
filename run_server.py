@@ -29,6 +29,7 @@ def main():
         host="0.0.0.0",
         port=8766,
         log_level="info",
+        reload=not getattr(__import__("sys"), "frozen", False),  # 本地开发自动重载，打包 exe 时禁用
     )
 
 

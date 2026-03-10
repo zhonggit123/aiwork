@@ -396,7 +396,18 @@ function getSubQuestionDetails() {
     };
     walk(part);
 
-    details.push({ index: pi + 1, heading, sectionLabels: partLabels });
+    // 采集本 part 内所有有意义的 placeholder（直接收集，不依赖 label 判断）
+    const partAnswerPhs = [];
+    const inputs = part.querySelectorAll("textarea, input[type='text'], input:not([type='hidden']):not([type='submit']):not([type='button']):not([type='file']):not([type='radio']):not([type='checkbox'])");
+    for (const inp of inputs) {
+      const ph = (inp.getAttribute("placeholder") || "").trim();
+      // 只保留对 AI 有意义的提示：含"分隔"、"格式"、"输入"等关键词，且长度足够
+      if (ph.length > 8 && /分隔|separator|格式|输入|填写|请输入/i.test(ph)) {
+        if (!partAnswerPhs.includes(ph)) partAnswerPhs.push(ph);
+      }
+    }
+
+    details.push({ index: pi + 1, heading, sectionLabels: partLabels, answerPlaceholders: partAnswerPhs });
   }
   return details;
 }
@@ -504,19 +515,36 @@ function getCurrentQuestionContext(index, numbers, currentSelectors, currentFiel
     sectionLabels: [], // 当前题区域内出现的区块标题（上传音频、题干、设置选项等），供大模型对应拆分
   };
 
-  // 从题号附近 DOM 推断 partName / typeHint
+  // 从题号附近 DOM 读取 partName / typeHint
   const numEl = numbers[index];
   if (numEl) {
-    let p = numEl.parentElement;
-    for (let up = 0; up < 5 && p; up++, p = p.parentElement) {
-      const prev = p.previousElementSibling;
-      const text = (prev ? prev.textContent : p.textContent || "").trim();
-      if (text && text.length < 80) {
-        if (/part\s*[a-d]|第一部分|第二部分|听后选择|听后应答|模仿朗读|交际朗读|信息转述|表格填空|填空/i.test(text)) {
-          slot.partName = slot.partName || text.replace(/\s+/g, " ").slice(0, 30);
+    // 优先：往上找到 paperEnter-main 容器，直接读其 .paperEnter-title 子元素
+    let ancestor = numEl.parentElement;
+    while (ancestor) {
+      if (ancestor.classList && ancestor.classList.contains("paperEnter-main")) {
+        const titleEl = ancestor.querySelector(".paperEnter-title");
+        if (titleEl) {
+          const titleText = (titleEl.textContent || "").trim().replace(/\s+/g, " ");
+          slot.partName = slot.partName || titleText.slice(0, 30);
+          slot.typeHint = slot.typeHint || titleText.slice(0, 30);
         }
-        if (/听后选择|听后应答|模仿朗读|交际朗读|信息转述|表格填空|单选|多选|判断|朗读|转述/i.test(text)) {
-          slot.typeHint = slot.typeHint || text.replace(/\s+/g, " ").slice(0, 24);
+        break;
+      }
+      ancestor = ancestor.parentElement;
+    }
+    // 兜底：往上 5 层检查 previousElementSibling 的文字（较短文本）
+    if (!slot.typeHint) {
+      let p = numEl.parentElement;
+      for (let up = 0; up < 5 && p; up++, p = p.parentElement) {
+        const prev = p.previousElementSibling;
+        const text = (prev ? prev.textContent : p.textContent || "").trim();
+        if (text && text.length < 80) {
+          if (/part\s*[a-d]|第一部分|第二部分|听后选择|听后应答|模仿朗读|交际朗读|信息转述|表格填空|填空/i.test(text)) {
+            slot.partName = slot.partName || text.replace(/\s+/g, " ").slice(0, 30);
+          }
+          if (/听后选择|听后应答|模仿朗读|交际朗读|信息转述|表格填空|单选|多选|判断|朗读|转述/i.test(text)) {
+            slot.typeHint = slot.typeHint || text.replace(/\s+/g, " ").slice(0, 24);
+          }
         }
       }
     }
@@ -595,7 +623,68 @@ async function runDetectAndWalk(initialSelectors) {
       // 若存在多个 .question-part，则额外收集每个小题的标题和标签（供逐小题描述）
       const subQuestions = subCount > 1 ? (getSubQuestionDetails() || []) : [];
       const optionKind = getCurrentCardOptionKind();
-      slots.push({ index: i + 1, subCount, sectionLabels, subQuestions, optionKind });
+
+      // 读取题型提示：从 paperEnter-title 或相邻文字中提取题型关键词
+      let typeHint = "";
+      const TYPE_KEYWORDS = [
+        "听后选择", "听后应答", "听后转述", "听后记录", "听后填空",
+        "模仿朗读", "交际朗读", "短文朗读", "句子朗读", "单词朗读",
+        "信息转述", "信息记录", "表格填空", "话题表达", "情景问答",
+        "单选", "多选", "判断", "填空", "朗读", "转述", "复述"
+      ];
+      const extractTypeKeyword = (text) => {
+        if (!text) return "";
+        for (const kw of TYPE_KEYWORDS) {
+          if (text.includes(kw)) return kw;
+        }
+        return "";
+      };
+      const numEl_i = numbers[i];
+      if (numEl_i) {
+        // 方法1：从题号元素向上找 paperEnter-main（题号在内容区时有效）
+        let anc = numEl_i.parentElement;
+        while (anc) {
+          if (anc.classList && anc.classList.contains("paperEnter-main")) {
+            const titleEl = anc.querySelector(".paperEnter-title");
+            if (titleEl) typeHint = extractTypeKeyword((titleEl.textContent || "").trim());
+            break;
+          }
+          anc = anc.parentElement;
+        }
+        // 方法2：向上 5 层看相邻元素文字（兜底）
+        if (!typeHint) {
+          let p = numEl_i.parentElement;
+          for (let up = 0; up < 5 && p; up++, p = p.parentElement) {
+            const prev = p.previousElementSibling;
+            const t = (prev ? prev.textContent : p.textContent || "").trim();
+            if (t && t.length < 80) { typeHint = extractTypeKeyword(t); if (typeHint) break; }
+          }
+        }
+      }
+      // 方法3：题号在导航栏外时，点击后直接查当前内容区的大节标题
+      if (!typeHint) {
+        const titleEl = document.querySelector(".paperEnter-main .paperEnter-title, #topic-section .paperEnter-title, .paperEnter-title");
+        if (titleEl) typeHint = extractTypeKeyword((titleEl.textContent || "").trim());
+      }
+
+      // 采集 answer / question 输入框的 placeholder，告知 AI 答案格式要求
+      const answerPlaceholders = [];
+      const qPlaceholders = [];
+      for (const [role, phArr] of [["answer", answerPlaceholders], ["question", qPlaceholders]]) {
+        const sel = selectors[role] || "";
+        if (!sel) continue;
+        sel.split(",").map(s => s.trim()).filter(Boolean).forEach(s => {
+          try {
+            const el = document.querySelector(s);
+            const ph = el && (el.getAttribute("placeholder") || "").trim();
+            if (ph && ph.length > 3 && !phArr.includes(ph)) phArr.push(ph);
+          } catch (_) {}
+        });
+      }
+
+      // 保存本题当前字段（label 里通常含 placeholder 文字），供后端生成每题专属的字段提示
+      const currentSlotFields = (result.fields || []).map(f => ({ role: f.role, label: f.label || "" }));
+      slots.push({ index: i + 1, subCount, sectionLabels, subQuestions, optionKind, typeHint, answerPlaceholders, qPlaceholders, currentSlotFields });
       try {
         chrome.runtime.sendMessage({
           type: "DETECT_PROGRESS",
@@ -603,6 +692,7 @@ async function runDetectAndWalk(initialSelectors) {
           total,
           fields: Object.keys(selectors).filter((k) => selectors[k]),
           currentSectionLabels: sectionLabels,
+          typeHint: typeHint,
         });
       } catch (_) {}
     }

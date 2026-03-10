@@ -742,152 +742,109 @@ def classify_file_fast(filename: str, text: str) -> Dict[str, Any]:
 # ─── 通用解析 Prompt（不写死具体试卷；目标结构由「页面检测」结果动态注入）────────────────
 
 # 合并解析（试题 + 答案材料）：通用规则，具体题数、一题多空等由 paper_metadata 注入
-MERGED_PARSE_PROMPT = """你是一个题目解析助手。用户会给你【试题】和【答案材料】（或其一），请按**录题页结构**解析并输出 JSON。
+MERGED_PARSE_PROMPT = """你是题目解析助手。将【试题】和【答案材料】（或其一）按**录题页结构**解析为 JSON 数组。
+文件分工：试题 → 题干/选项；答案材料 → 听力原文/参考答案（听后应答类题干可能在答案材料里，选项在试题上，按题号对齐合并）。
 
-【通用规则】
-- **题目顺序（重要）**：JSON 数组中题目的顺序必须与文档中题目/节的**出现顺序严格一致**。按原文从上到下依次输出；第 1 题对应第 1 条，第 2 题对应第 2 条。**不要根据题型、内容相似度或你自己的理解重新排序。**
-- **题目边界（重要）**：相邻两题必须严格分开，不得合并、借用、串用彼此内容。尤其是相邻的长文本题（如朗读、话题表达、信息转述、书面表达等），前一题的正文、提示、开头句、参考答案，**都不能**混入后一题；后一题内容也不能提前并入前一题。
-- **分题依据（重要）**：以文档里能看到的题号、序号、节标题、明显换段为准拆题。只要出现新的题号/序号/节标题（如 `10.`、`11.`、`三、`、`第三节`），通常就表示应开始新的 JSON 对象。
-- 若下方有【录题页结构】/【目标题数】：输出条数、一题多空以之为准；某题多空时只输出一条，用 blanks: [{question, answer}, ...]，顺序与页面一致。
-- 若未提供录题页结构：按文档题号与题型逐条提取；同一表格或同一材料下的多空可合并为一条并用 blanks。
-- 试题部分：题干、选项等；答案材料部分：**听力原文**（仅听力材料正文）、参考答案。听后应答类题干可能在答案材料里，选项在试题上。按题号对齐合并。
+【输出约束】
+- 顺序：严格按文档出现顺序，第1条对应页面第1题；不得按题型/相似度换位
+- 边界：相邻题严格分开，不得借用/混入彼此内容（朗读、话题表达、信息转述等长文本题尤其注意）
+- 分题：以文档题号、序号、节标题、明显换段为准；出现新题号即开始新 JSON 对象
+- 有【录题页结构】/【目标题数】时：以之为准；多空题只输出一条，用 blanks 数组，顺序与页面一致
+- 无录题页结构时：按文档题号逐条提取；同一材料下多空可合并为一条
 
-【内嵌答案规则】答案可能以 (A)/(B)/(C) 形式写在题目行首（如 "(C)1.A.  B．  C．"），请提取括号内字母作为 answer，去掉行首的 (X) 前缀，只保留题干正文和选项内容。
+【格式规则】
+- 内嵌答案：答案以 (A)/(C) 形式写在行首（如 "(C)1.A. B. C."），提取括号内字母为 answer，删除行首 (X) 前缀
+- 图片选项：选项为图片时（字母后为空白），options 每项填 "<<IMG>>"
+- ★符号：candidates 字段去掉每条最前面的★；其他所有字段保留★，严禁删除
+- 标点：英文内容用半角 ASCII 标点（, . ? ! : ;），中文内容保持原格式
 
-【图片选项规则】若某题的选项在原卷中为图片（选项字母后内容为空白，如 "A.    B．    C．"），options 数组中每项填 "<<IMG>>"（系统在填充时会自动替换为默认图片文件名）。
+【JSON 字段】
+- type: 题型，如 "listening_choice" | "listening_response" | "reading_aloud" | "listening_fill" | "listening_fill_and_retell" 等（reading_aloud 对应「交际朗读」）
+- listening_script: 仅听力材料正文；无则 ""；有原文就输出，不要省略。对话型（W:/M:）各行用 \n 分隔。多小题时见下方「两层音频」说明
+- question: 该题专属文字，去掉开头题号（如 1. 2. (1) 等）。**严禁填大节通用说明**——判断：把这段文字放到同节另一道题，若同样适用 → 通用说明，填 ""；若必须配合本题内容才有意义 → 填入。题干需上传图片时填 ""
+- keyword: 仅「参考单词/送评单词」框存在时填对应单词；无则 ""
+- options: 选项数组；无则 []
+- candidates: 仅 listening_response 使用，候选答案数组（去掉每条最前面的★）
+- answer: 单题答案，只填字母（如 "A"）；多空时用 blanks，此处留 ""
+- blanks: 多空题时使用 [{question, keyword, answer, options, listening_script}]；question 去掉开头题号；options 无则 []；不要把小题选项放到顶层 options
+- image_url: 【录题页结构】标注本题需上传图片时填对应 URL，否则填 ""
+- explanation: 每题必须生成，结合题干/听力原文写解析；多小题用「第1小题」「第2小题」等相对编号，不用试卷绝对题号
+- 填空类额外说明：placeholder 提示「用'X'分隔多个答案」→ answer 用数组（如 ["red","potatoes"]）；提示「用'|'分隔多种解答」→ 元素内加'|'（如 ["red|Red","potatoes"]）；纯转述型直接用字符串
 
-【★ 符号处理规则（重要）】
-- **candidates 字段**（听后应答候选项）：去掉每条候选项文字**最前面**的 ★ 等标注符号（如 "★In the zoo." → "In the zoo."）。
-- **其他所有字段**（question、listening_script、blanks[].question 等）：**严禁删除** ★ 符号，原文有 ★ 就保留 ★。
+【多小题两层音频】
+情形A（每小题独立对话）：文档有编号分段（"1.W:... 2.W:..."），段数≥小题数
+  → 顶层 listening_script 留 ""，每段放入对应 blank.listening_script（去掉序号）
+情形B（所有小题共享同一段材料）：文档为一段连续文本，无分段编号
+  → 共享段落放顶层 listening_script，blank.listening_script 填该小题提问句（如有）或 ""
+严禁把多段内容合并成一段塞进 blank[0] 或顶层
 
-【标点符号规则】英文内容（听力原文、题干、答案等）中请统一使用半角 ASCII 标点（, . ? ! : ;），不要使用中文全角标点（如，。？！：；）；中文内容保持原格式不变。
+【听后应答题】
+- question 填题目中的问题句（音频会朗读该句）
+- 答案材料中的候选项（去掉每条最前面的★）全部放入 candidates
+- answer 优先从文档查找；无明确标注则从 candidates 中选最合理的
 
-每道题（每条）的 JSON 结构：
-- type: 题型，如 "listening_choice" | "listening_response" | "reading_aloud" | "listening_fill" | "listening_fill_and_retell" 等；其中 `reading_aloud` 对应录题页里的「交际朗读」
-- listening_script: **仅听力材料正文**，填到页面的「听力原文」输入框；无听力则 ""。若题目材料里提供了对应原文，即使页面该字段标注"非必填"也要输出，不要省略。对话型原文（W:/M: 格式）各说话人之间用 \n 换行分隔，不要写成一行。多小题（blanks）时按以下规则处理：① 若多小题**共用同一段**对话/段落（最常见情况）：把完整对话放在**顶层 listening_script**，各 blank 的 listening_script 填该小题**专属**的短内容（如该小题播放的提问句，例如 "What's wrong with Lily?"），若无专属内容则填 ""——**严禁把共享对话复制到每个 blank**；② 若每小题有**完全独立**的对话/段落：顶层 listening_script 留 ""，各 blank 填各自对应的完整原文，不截断。
-- question: 题干，必须是**该题专属**的内容（试卷上仅属于这道题、不适用于其他同类题的文字）；若题干需要上传图片则填 ""。**若题干内容开头带有题号（如 1. 2. 一、(1) （1）等），请去掉题号，只保留题干正文。** **题干应包含该题特有的文字内容（问题、提示、参考起始句等），但严禁把「大节通用说明」填入 question**——通用说明指对该节所有题目都适用的模板文字，例如"选择与你所听到的对话相符的最佳选项。""听一遍下面的短文，之后你有X秒钟的准备时间……"等；这类文字每道同类题都相同，不属于任何单道题，**不得**填入 question。判断方法：把这段文字原封不动放到同节另一道题，是否照样适用？若适用 → 通用说明（不填，填 ""）；若必须配合本题才有意义 → 该题内容（填入）。
-- keyword: 仅在录题页存在「参考单词/送评单词」输入框时使用，填该题对应的送评单词/参考单词；无则 ""。
-- options: 选项数组，无则 []
-- candidates: **仅 listening_response（听后应答）题型使用**，所有候选答案的数组（去掉每条候选项最前面的★等标注符号），如 ["In the zoo.", "Mr Smith."]
-- answer: 单题时的答案，**只填选项字母**（如 "A"、"B"、"C"），不要带选项文字；若该题有多空则用 blanks，不填 answer
-- blanks: 仅当该题在录题页有多个答案框时使用，数组每项 {question, keyword, answer, options, listening_script}，options 为该小题的选项数组（无选项则 []），listening_script 为该小题对应的音频原文片段（详见下方听力原文规则），与页面顺序一致；**不要**把所有小题选项放到顶层 options 字段
-- image_url: 若【录题页结构】标注本题「录入类型:image」或「包含：上传图片」，说明本题需要上传题干图片；若试卷中有对应的图片URL则填入，否则填 ""
-- 填空类题型（如 listening_fill、listening_fill_and_retell）特别说明：
-  - 若某个答案框的 placeholder 提示「各个答案之间用'X'分隔」，说明该框一次填多个答案，answer 用**数组**输出（如 ["red","potatoes","count"]），填充时会自动按 placeholder 的分隔符拼接
-  - 若 placeholder 提示「单个答案包含多种解答形式用'|'分隔」，同一空有多个可接受答案时用数组元素内加'|'，如 ["red|Red","potatoes"]
-  - 纯段落转述型的答案（单个长句/段落）直接用字符串
-  - 多节合并为一道题时用 blanks 数组，每节一条；listening_script 填听力原文；顶层 question 填 ""
-  - blanks[].question 必须是**试卷上印刷的原始内容**（如信息转述节的起始句），不要自己编造任务描述；若开头有题号也请去掉。
-- explanation: **题目解析/详解**，填到页面「题目属性」里的「解析」框；不要与 listening_script 混淆，不要填到听力原文。**每条题目都必须包含 explanation 字段**：请结合题干内容和听力原文（如有）为该题生成解析/详解，不要省略该字段或填「略」。**多小题题目的解析中，引用各小题时用「第1小题」「第2小题」等相对编号**，不要用试卷原始的绝对题号（如第14题）——因为每道题录入后是独立的，绝对题号对学生无意义。
+【交际朗读题】
+- type 输出 "reading_aloud"
+- 【录题页结构】「含：」有「听力原文」→ listening_script 填原文，question 填题干/要求；无「听力原文」→ listening_script 必须为 ""，朗读内容完整填入 question
+- question 填该题专属内容（朗读短文/单词/句子或特有任务要求）；placeholder 含「音标」→ 填「单词 /音标/」格式（如 "deal /diːl/"）；严禁填通用操作说明（"现在你有X秒钟的准备时间"等）；排除通用说明后有朗读内容必须完整保留，确无内容才填 ""
+- keyword 只填单词本身，不含音标
 
-【多小题听力题「两层音频」结构说明（重要）】
-录题平台中，多小题听力题（如听力选择、听后判断等）每个小题都有一个独立音频播放器（blanks[n].listening_script），大题本身也可以有一个共享音频（顶层 listening_script）。
-
-请根据 Word 材料的结构判断如何分配：
-
-情形 A：Word 中有**与小题数量相同的编号段落**（如 "1. W:... M:... 2. W:... M:... 3. W:..."），
-  → 每段独立对话分别放入对应 blank 的 listening_script（去掉序号），顶层 listening_script 留 ""
-  → 这是最常见情形，每小题播放各自独立的短对话
-
-情形 B：Word 中只有**一段共享独白/对话**（无分段编号，所有小题围绕同一段材料提问），
-  → 共享段落放入顶层 listening_script，blank.listening_script 填该小题的提问句（如有）或 ""
-  → 例：一段人物独白 + 多个问题，问题各自作为小题的 listening_script
-
-判断依据：若材料中有 "1." "2." "3." 等明确的分段序号且段数 ≥ 小题数 → 情形 A；
-          若材料是一段连续文本（无对应小题的分段编号）→ 情形 B
-          **严禁把多段内容合并成一段塞进 blank[0] 或顶层**
-
-【听后应答题特殊说明】
-- 听后应答（listening_response）题型：试题文件中的问题（如 "Who likes eagles?"）是听力音频会朗读的问题，放入 question 字段
-- 答案材料中该题号对应的所有候选项（去掉每条最前面的★等符号）全部放入 candidates 数组
-- answer 字段：优先从文档中查找该题的正确答案；若文档未明确标注，则根据问题从 candidates 中选择最合理的一个作为答案
-
-【交际朗读题特殊说明】
-- 录题页若显示为「交际朗读」，type 仍输出 "reading_aloud"
-- **【听力原文字段判断（重要）】**：若本题的录题页结构描述中**不含「听力原文」字段**（即「含：」列表里没有「听力原文」），则 `listening_script` **必须输出空字符串 ""**，朗读内容必须完整填入 `question`。若结构描述中**含有「听力原文」字段**，则 `listening_script` 填音频对应的原文，`question` 填题干要求或朗读内容。
-- question 填试卷上该题**专属**的内容：实际要朗读的短文/句子/单词，或该题特有的任务要求（背景情境、提示词、参考开头句等）。这些内容因题而异，是学生需要看到才能完成作答的文字，都应保留。**若录题页「设置题干」输入框的 placeholder 提示包含「音标」「单词+音标」，question 须填「单词 /音标/」，如 "deal /diːl/"；若提示仅为「单词」则只填单词；若提示为「句子」则只填句子。以页面实际 placeholder 为准。**
-- **严禁**把「通用题型操作说明」填入 question。通用说明指每道同类题都完全相同的模板文字，例如："听一遍下面的短文，之后你有X秒钟的准备时间。请在听到录音提示后X秒钟内完成朗读/回答。现在你有X秒钟的准备时间。"——这类文字只是考试流程说明，与具体题目内容无关，**不得**填入 question。
-- 判断方法：把这段文字原封不动放到另一道同类题，是否照样适用？若适用 → 通用说明（不填）；若必须配合本题内容才有意义 → 该题要求（填入）。
-- 若 question 排除通用操作说明后确无文字内容，则填 ""（朗读内容将通过上传图片另行提供）。
-- **重要**：排除通用说明后，若原材料中仍有学生需要实际朗读的内容（短文段落、单词、句子等），必须完整填入 question，不得遗漏、不得留空、不得用套话替代。仅当真的没有任何文字朗读内容时才填 ""。
-- keyword 填「参考单词/送评单词」框需要的内容（**仅填单词本身，不含音标**，该字段只用于系统评分送审，不展示给学生）；若材料未提供则填 ""
-
-【听后记录并转述题特殊说明】
-- 题型 listening_fill_and_retell 含两部分：第一节「信息记录」（表格填空）和第二节「信息转述」（口头转述）。
-- 输出1条，type 填 "listening_fill_and_retell"，用 blanks 数组：第一节各空每空一项（answer 为填空答案），第二节一项（question 填转述起始句原文，answer 填转述参考答案）。
-- listening_script 填完整听力原文。
+【听后记录并转述题】type = "listening_fill_and_retell"
+- 输出1条，blanks：第一节（信息记录）每空一项；第二节（信息转述）一项（question 填转述起始句原文，answer 填参考答案）
+- 顶层 listening_script 填完整听力原文
 
 只输出 JSON 数组，不要 markdown 代码块，不要其他说明。"""
 
 # 单文件解析：同样通用，目标结构由 paper_metadata 注入
-SINGLE_FILE_PROMPT = """你是一个题目解析助手。请解析试卷内容，按**录题页结构**输出 JSON。
+SINGLE_FILE_PROMPT = """你是题目解析助手。请解析试卷内容，按**录题页结构**输出 JSON 数组。
 
-【通用规则】
-- **题目顺序（重要）**：JSON 数组中题目的顺序必须与文档中题目/节的**出现顺序严格一致**。按原文从上到下依次输出；第 1 题对应第 1 条，第 2 题对应第 2 条。**不要根据题型、内容相似度或你自己的理解重新排序。**
-- **题目边界（重要）**：相邻两题必须严格分开，不得合并、借用、串用彼此内容。尤其是相邻的长文本题（如朗读、话题表达、信息转述、书面表达等），前一题的正文、提示、开头句、参考答案，**都不能**混入后一题；后一题内容也不能提前并入前一题。
-- **分题依据（重要）**：以文档里能看到的题号、序号、节标题、明显换段为准拆题。只要出现新的题号/序号/节标题（如 `10.`、`11.`、`三、`、`第三节`），通常就表示应开始新的 JSON 对象。
-- 若下方有【录题页结构】/【目标题数】：以之为准；某题多空时只输出一条，用 blanks，顺序与页面一致。
-- 若未提供录题页结构：按文档题号逐条提取；同一表格/同一材料下多空可合并为一条并用 blanks。
+【输出约束】
+- 顺序：严格按文档出现顺序，第1条对应页面第1题；不得按题型/相似度换位
+- 边界：相邻题严格分开，不得借用/混入彼此内容（朗读、话题表达、信息转述等长文本题尤其注意）
+- 分题：以文档题号、序号、节标题、明显换段为准；出现新题号即开始新 JSON 对象
+- 有【录题页结构】/【目标题数】时：以之为准；多空题只输出一条，用 blanks 数组，顺序与页面一致
+- 无录题页结构时：按文档题号逐条提取；同一材料下多空可合并为一条
 
-【内嵌答案规则】答案可能以 (A)/(B)/(C) 形式写在题目行首（如 "(C)1.A.  B．  C．"），请提取括号内字母作为 answer，去掉行首的 (X) 前缀，只保留题干正文和选项内容。
+【格式规则】
+- 内嵌答案：答案以 (A)/(C) 形式写在行首（如 "(C)1.A. B. C."），提取括号内字母为 answer，删除行首 (X) 前缀
+- 图片选项：选项为图片时（字母后为空白），options 每项填 "<<IMG>>"
+- ★符号：candidates 字段去掉每条最前面的★；其他所有字段保留★，严禁删除
+- 标点：英文内容用半角 ASCII 标点（, . ? ! : ;），中文内容保持原格式
 
-【图片选项规则】若某题的选项在原卷中为图片（选项字母后内容为空白，如 "A.    B．    C．"），options 数组中每项填 "<<IMG>>"（系统在填充时会自动替换为默认图片文件名）。
+【JSON 字段】
+- type: 题型，如 "listening_choice" | "listening_response" | "reading_aloud" | "listening_fill" | "listening_fill_and_retell" 等（reading_aloud 对应「交际朗读」）
+- listening_script: 仅听力材料正文；无则 ""；有原文就输出，不要省略。对话型（W:/M:）各行用 \n 分隔。多小题时见下方「两层音频」说明
+- question: 该题专属文字，去掉开头题号（如 1. 2. (1) 等）。**严禁填大节通用说明**——判断：把这段文字放到同节另一道题，若同样适用 → 通用说明，填 ""；若必须配合本题内容才有意义 → 填入。题干需上传图片时填 ""
+- keyword: 仅「参考单词/送评单词」框存在时填对应单词；无则 ""
+- options: 选项数组；无则 []
+- candidates: 仅 listening_response 使用，候选答案数组（去掉每条最前面的★）
+- answer: 单题答案，只填字母（如 "A"）；多空时用 blanks，此处留 ""
+- blanks: 多空题时使用 [{question, keyword, answer, options, listening_script}]；question 去掉开头题号；options 无则 []；不要把小题选项放到顶层 options
+- image_url: 【录题页结构】标注本题需上传图片时填对应 URL，否则填 ""
+- explanation: 每题必须生成，结合题干/听力原文写解析；多小题用「第1小题」「第2小题」等相对编号，不用试卷绝对题号
+- 填空类额外说明：placeholder 提示「用'X'分隔多个答案」→ answer 用数组（如 ["red","potatoes"]）；提示「用'|'分隔多种解答」→ 元素内加'|'（如 ["red|Red","potatoes"]）；纯转述型直接用字符串
 
-【★ 符号处理规则（重要）】
-- **candidates 字段**（听后应答候选项）：去掉每条候选项文字**最前面**的 ★ 等标注符号。
-- **其他所有字段**（question、listening_script、blanks[].question 等）：**严禁删除** ★ 符号，原文有 ★ 就保留 ★。
+【多小题两层音频】
+情形A（每小题独立对话）：文档有编号分段（"1.W:... 2.W:..."），段数≥小题数
+  → 顶层 listening_script 留 ""，每段放入对应 blank.listening_script（去掉序号）
+情形B（所有小题共享同一段材料）：文档为一段连续文本，无分段编号
+  → 共享段落放顶层 listening_script，blank.listening_script 填该小题提问句（如有）或 ""
+严禁把多段内容合并成一段塞进 blank[0] 或顶层
 
-【标点符号规则】英文内容中请统一使用半角 ASCII 标点（, . ? ! : ;），不要使用中文全角标点（，。？！：；）；中文内容保持原格式。
+【听后应答题】
+- question 填题目中的问题句（音频会朗读该句）
+- 答案材料中的候选项（去掉每条最前面的★）全部放入 candidates
+- answer 优先从文档查找；无明确标注则从 candidates 中选最合理的
 
-每道题的 JSON 结构：
-- type: 题型，如 "listening_choice" | "listening_response" | "reading_aloud" | "listening_fill" | "listening_fill_and_retell" 等；其中 `reading_aloud` 对应录题页里的「交际朗读」
-- listening_script: 仅听力材料正文，填「听力原文」框；无则 ""。若题目材料里提供了对应原文，即使页面该字段标注"非必填"也要输出，不要省略。对话型原文（W:/M: 格式）各说话人之间用 \n 换行分隔，不要写成一行。多小题（blanks）时按以下规则处理：① 若多小题共用同一段对话（最常见）：完整对话放**顶层 listening_script**，各 blank 的 listening_script 填该小题专属短内容（如该小题的提问句），无则 ""，**不要把共享对话复制到每个 blank**；② 若每小题有完全独立的对话：顶层留 ""，各 blank 填各自对应完整原文，不截断。
-- question: 题干，必须是**该题专属**的内容（试卷上仅属于这道题的文字）；题干需要上传图片时填 ""。**若题干内容开头带有题号（如 1. 2. 一、(1) （1）等），请去掉题号，只保留题干正文。** **严禁把「大节通用说明」填入 question**——通用说明指对该节所有题目都适用的模板文字，例如"选择与你所听到的对话相符的最佳选项。""听一遍下面的短文……"等；判断方法：把这段文字放到同节另一道题，若同样适用 → 通用说明，填 ""；若必须配合本题内容 → 填入。题干应包含该题特有的问题、提示、参考起始句等，完整保留，不要截断或省略。
-- keyword: 仅在录题页存在「参考单词/送评单词」输入框时使用，填该题对应的送评单词/参考单词；无则 ""。
-- options: 选项数组，无则 []
-- candidates: **仅 listening_response（听后应答）题型使用**，所有候选答案的数组（去掉每条候选项最前面的★等标注符号），如 ["In the zoo.", "Mr Smith."]
-- answer: 单题答案，**只填选项字母**（如 "A"）；多空时用 blanks
-- blanks: 该题多空时使用 [{question, keyword, answer, options, listening_script}]，question 必须是**该题专属**的内容，若开头有题号也请去掉；options 为该小题选项数组（无则 []）；listening_script 为该小题对应的音频原文片段（详见下方听力原文规则）；**不要**把选项放到顶层 options 字段
-- image_url: 若【录题页结构】标注本题需要上传图片，且试卷中有对应图片URL则填入，否则填 ""
-- 填空类题型：若答案框 placeholder 提示「用'X'分隔」，answer 用数组（如 ["red","potatoes","count"]）
-- explanation: 题目解析，填「题目属性」里的「解析」框；不要填到听力原文。**每条题目都必须包含 explanation 字段**：请结合题干内容和听力原文（如有）为该题生成解析/详解，不要省略该字段或填「略」。**多小题题目的解析中，用「第1小题」「第2小题」等相对编号**，不要用试卷原始的绝对题号（如第14题）。
+【交际朗读题】
+- type 输出 "reading_aloud"
+- 【录题页结构】「含：」有「听力原文」→ listening_script 填原文，question 填题干/要求；无「听力原文」→ listening_script 必须为 ""，朗读内容完整填入 question
+- question 填该题专属内容（朗读短文/单词/句子或特有任务要求）；placeholder 含「音标」→ 填「单词 /音标/」格式（如 "deal /diːl/"）；严禁填通用操作说明（"现在你有X秒钟的准备时间"等）；排除通用说明后有朗读内容必须完整保留，确无内容才填 ""
+- keyword 只填单词本身，不含音标
 
-【多小题听力题「两层音频」结构说明（重要）】
-录题平台中，多小题听力题（如听力选择、听后判断等）每个小题都有一个独立音频播放器（blanks[n].listening_script），大题本身也可以有一个共享音频（顶层 listening_script）。
-
-请根据 Word 材料的结构判断如何分配：
-
-情形 A：Word 中有**与小题数量相同的编号段落**（如 "1. W:... M:... 2. W:... M:... 3. W:..."），
-  → 每段独立对话分别放入对应 blank 的 listening_script（去掉序号），顶层 listening_script 留 ""
-  → 这是最常见情形，每小题播放各自独立的短对话
-
-情形 B：Word 中只有**一段共享独白/对话**（无分段编号，所有小题围绕同一段材料提问），
-  → 共享段落放入顶层 listening_script，blank.listening_script 填该小题的提问句（如有）或 ""
-  → 例：一段人物独白 + 多个问题，问题各自作为小题的 listening_script
-
-判断依据：若材料中有 "1." "2." "3." 等明确的分段序号且段数 ≥ 小题数 → 情形 A；
-          若材料是一段连续文本（无对应小题的分段编号）→ 情形 B
-          **严禁把多段内容合并成一段塞进 blank[0] 或顶层**
-
-【听后应答题特殊说明】
-- 听后应答（listening_response）题型：问题（如 "Who likes eagles?"）放入 question 字段
-- 该题号对应的所有候选项（去掉每条最前面的★等符号）全部放入 candidates 数组
-- answer 字段：优先从文档中查找该题的正确答案；若文档未明确标注，则根据问题从 candidates 中选择最合理的一个作为答案
-
-【交际朗读题特殊说明】
-- 录题页若显示为「交际朗读」，type 仍输出 "reading_aloud"
-- **【听力原文字段判断（重要）】**：若本题的录题页结构描述中**不含「听力原文」字段**（即「含：」列表里没有「听力原文」），则 `listening_script` **必须输出空字符串 ""**，朗读内容必须完整填入 `question`。若结构描述中**含有「听力原文」字段**，则 `listening_script` 填音频对应的原文，`question` 填题干要求或朗读内容。
-- question 填试卷上该题**专属**的内容：实际要朗读的短文/句子/单词，或该题特有的任务要求（背景情境、提示词、参考开头句等）。这些内容因题而异，是学生需要看到才能完成作答的文字，都应保留。**若录题页「设置题干」输入框的 placeholder 提示包含「音标」「单词+音标」，question 须填「单词 /音标/」，如 "deal /diːl/"；若提示仅为「单词」则只填单词；若提示为「句子」则只填句子。以页面实际 placeholder 为准。**
-- **严禁**把「通用题型操作说明」填入 question。通用说明指每道同类题都完全相同的模板文字，例如："听一遍下面的短文，之后你有X秒钟的准备时间。请在听到录音提示后X秒钟内完成朗读/回答。现在你有X秒钟的准备时间。"——这类文字只是考试流程说明，与具体题目内容无关，**不得**填入 question。
-- 判断方法：把这段文字原封不动放到另一道同类题，是否照样适用？若适用 → 通用说明（不填）；若必须配合本题内容才有意义 → 该题要求（填入）。
-- 若 question 排除通用操作说明后确无文字内容，则填 ""（朗读内容将通过上传图片另行提供）。
-- **重要**：排除通用说明后，若原材料中仍有学生需要实际朗读的内容（短文段落、单词、句子等），必须完整填入 question，不得遗漏、不得留空、不得用套话替代。仅当真的没有任何文字朗读内容时才填 ""。
-- keyword 填「参考单词/送评单词」框需要的内容（**仅填单词本身，不含音标**，该字段只用于系统评分送审，不展示给学生）；若材料未提供则填 ""
-
-【听后记录并转述题特殊说明】
-- 题型 listening_fill_and_retell 含两部分：第一节「信息记录」（表格填空）和第二节「信息转述」（口头转述）。
-- 输出1条，type 填 "listening_fill_and_retell"，用 blanks 数组：第一节各空每空一项（answer 为填空答案），第二节一项（question 填转述起始句原文，answer 填转述参考答案）。
-- listening_script 填完整听力原文。
+【听后记录并转述题】type = "listening_fill_and_retell"
+- 输出1条，blanks：第一节（信息记录）每空一项；第二节（信息转述）一项（question 填转述起始句原文，answer 填参考答案）
+- 顶层 listening_script 填完整听力原文
 
 只输出 JSON 数组，不要 markdown 代码块，不要其他说明。"""
 
@@ -925,23 +882,10 @@ def _system_prompt_with_total(base_prompt: str, paper_metadata: Dict[str, Any] |
             section_labels = s.get("sectionLabels") or []
             labels_set = set(section_labels) if isinstance(section_labels, list) else set()
             
-            # 推断题型
-            inferred_type = ""
-            if "参考单词" in labels_set and "题干" in labels_set:
-                inferred_type = "交际朗读"
-            elif "听力原文" in labels_set and ("设置选项" in labels_set or "图片选项" in labels_set):
-                inferred_type = "听后选择"
-            elif "听力原文" in labels_set and "题干" in labels_set and "设置答案" in labels_set and "设置选项" not in labels_set:
-                inferred_type = "听后记录并转述"
-            elif "听力原文" in labels_set and "设置选项" not in labels_set and "设置答案" not in labels_set:
-                inferred_type = "交际朗读"
-            elif "设置选项" in labels_set and "听力原文" not in labels_set:
-                inferred_type = "听后应答"
-            elif "设置答案" in labels_set and "设置选项" not in labels_set:
-                inferred_type = "填空/转述"
-            
-            # 使用页面提供的 typeHint 或推断的类型
-            type_hint = (s.get("typeHint") or "").strip() or (s.get("typeCode") or "").strip() or inferred_type
+            # 题型只使用页面 HTML 中明确读到的值（typeHint / typeCode），
+            # 不做任何推断——平台有200+题型，靠 sectionLabels 猜类型容易出错，
+            # 含：/禁：字段约束已经足够告诉 AI 该填什么。
+            type_hint = (s.get("typeHint") or "").strip() or (s.get("typeCode") or "").strip()
             
             # 检测选项类型
             option_kind = (s.get("optionKind") or "").strip()
@@ -966,27 +910,54 @@ def _system_prompt_with_total(base_prompt: str, paper_metadata: Dict[str, Any] |
                         all_same_structure = False
                         break
                 
+                # 从本题的 currentSlotFields 建立 role→label 映射（label 通常含 placeholder 文字）
+                slot_fields_raw = s.get("currentSlotFields") or []
+                role_label = {f.get("role", ""): (f.get("label") or "").strip() for f in slot_fields_raw if f.get("role")}
+                
+                _SQ_FIELD_ORDER = [
+                    ("上传音频", "上传音频"),
+                    ("听力原文", "听力原文"),
+                    ("题干",     "题干"),
+                    ("参考单词", "参考单词"),
+                    ("设置选项", "设置选项"),
+                    ("设置答案", "设置答案"),
+                ]
+                
+                # 优先用 answerPlaceholders（来自输入框 placeholder 属性）
+                _slot_ans_phs = [p for p in (s.get("answerPlaceholders") or []) if p and len(p) > 4]
+
+                def _sq_ph(n: int) -> str:
+                    """取第 n 个小题答案框的 placeholder，优先用直接采集的 answerPlaceholders"""
+                    # 先用直接采集的 placeholder（最可靠，与题无关只按输入框顺序）
+                    if _slot_ans_phs:
+                        idx0 = n - 1
+                        return _slot_ans_phs[idx0][:60] if idx0 < len(_slot_ans_phs) else _slot_ans_phs[0][:60]
+                    # 兜底：从 currentSlotFields label 里找
+                    lbl = role_label.get(f"blank_answer_{n}") or role_label.get("answer") or ""
+                    return lbl[:60] if lbl and len(lbl) > 4 and lbl.strip().upper() not in {"A","B","C","D"} else ""
+                
                 if all_same_structure and first_sq_labels:
-                    # 小题结构相同，合并描述
-                    desc_parts.append(f"共{sub}小题，结构相同")
-                    # 列出每小题包含的所有关键组件（含题干/参考单词）
                     sq_components = [l for l in ["上传音频", "听力原文", "题干", "参考单词", "设置选项", "设置答案"] if l in first_sq_labels]
-                    if sq_components:
-                        desc_parts.append(f"每小题含：{'/'.join(sq_components)}")
+                    sq_part = f"共{sub}小题，每小题含：{'/'.join(sq_components)}" if sq_components else f"共{sub}小题，结构相同"
+                    ph1 = _sq_ph(1)
+                    if ph1:
+                        sq_part += f"，答案框提示：{ph1}"
+                    desc_parts.append(sq_part)
                 else:
                     desc_parts.append(f"共{sub}小题，一题多空")
-                    # 只有结构不同时才逐个描述
-                    if not all_same_structure and sub_questions:
+                    if sub_questions:
                         sq_descs = []
                         for sq in sub_questions[:sub]:
                             sq_idx = sq.get("index", len(sq_descs) + 1)
-                            sq_heading = (sq.get("heading") or "").strip()
-                            if sq_heading:
-                                # 简化标题，只取关键词
-                                if "信息记录" in sq_heading:
-                                    sq_descs.append(f"第{sq_idx}小题:信息记录")
-                                elif "信息转述" in sq_heading:
-                                    sq_descs.append(f"第{sq_idx}小题:信息转述")
+                            sq_labels = set(sq.get("sectionLabels") or [])
+                            sq_fields = [disp for key, disp in _SQ_FIELD_ORDER if key in sq_labels]
+                            sq_desc = f"第{sq_idx}小题"
+                            if sq_fields:
+                                sq_desc += f"含：{'/'.join(sq_fields)}"
+                            ph = _sq_ph(sq_idx)
+                            if ph:
+                                sq_desc += f"，答案框提示：{ph}"
+                            sq_descs.append(sq_desc)
                         if sq_descs:
                             desc_parts.append("；".join(sq_descs))
             
@@ -1011,15 +982,55 @@ def _system_prompt_with_total(base_prompt: str, paper_metadata: Dict[str, Any] |
                 ]
                 main_components = [disp for key, disp in _FIELD_ORDER if key in labels_set]
             else:
-                # 多小题：小题内已描述核心字段，大题层面只补充附加字段
-                if "题目属性信息" in labels_set:
-                    main_components.append("题目属性")
-                if "解析" in labels_set:
-                    main_components.append("解析")
-                if "上传图片" in labels_set:
-                    main_components.append("上传图片")
+                # 多小题：大题层面显示顶层专属字段（音频/原文/图片/属性/解析）
+                # 注意：上传音频/听力原文 必须包含，否则「禁：」规则会错误禁止 AI 填写共享对话
+                for key, disp in [
+                    ("上传音频",     "上传音频"),
+                    ("听力原文",     "听力原文"),
+                    ("上传图片",     "上传图片"),
+                    ("题目属性信息", "题目属性"),
+                    ("解析",         "解析"),
+                ]:
+                    if key in labels_set:
+                        main_components.append(disp)
             if main_components:
                 desc_parts.append(f"含：{'/'.join(main_components)}")
+            
+            # 针对本槽位，将"含："里没有的关键字段明确标注为禁止填写
+            # 这样 AI 拿到的是每道题专属的字段禁令，而不只是全局通用规则
+            _LABEL_TO_FORBIDDEN = [
+                ("听力原文",  'listening_script=""'),
+                ("设置选项",  "options=[]"),
+                ("设置答案",  'answer=""'),
+                ("参考单词",  'keyword=""'),
+            ]
+            forbidden_hints = [fh for lbl, fh in _LABEL_TO_FORBIDDEN if lbl not in labels_set]
+            if forbidden_hints:
+                desc_parts.append("禁：" + "，".join(forbidden_hints))
+            
+            # 单题：优先用 answerPlaceholders / qPlaceholders（来自输入框 placeholder 属性，最直接）
+            if sub <= 1:
+                ans_phs = [p for p in (s.get("answerPlaceholders") or []) if p and len(p) > 4]
+                q_phs   = [p for p in (s.get("qPlaceholders")      or []) if p and len(p) > 4]
+                if ans_phs:
+                    desc_parts.append(f"答案框提示：{ans_phs[0][:60]}")
+                else:
+                    # 兜底：从 currentSlotFields label 里找（部分平台会把 placeholder 写进 label）
+                    for _f in (s.get("currentSlotFields") or []):
+                        _r   = _f.get("role", "")
+                        _lbl = (_f.get("label") or "").strip()
+                        if _r == "answer" and len(_lbl) > 4 and _lbl.upper() not in {"A","B","C","D"}:
+                            desc_parts.append(f"答案框提示：{_lbl[:60]}")
+                            break
+                if q_phs:
+                    desc_parts.append(f"题干框提示：{q_phs[0][:40]}")
+                else:
+                    for _f in (s.get("currentSlotFields") or []):
+                        _r   = _f.get("role", "")
+                        _lbl = (_f.get("label") or "").strip()
+                        if _r == "question" and len(_lbl) > 4:
+                            desc_parts.append(f"题干框提示：{_lbl[:40]}")
+                            break
             
             desc = f"序号{idx}"
             if desc_parts:

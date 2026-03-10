@@ -4,6 +4,30 @@ const onlyWhenDetected = document.getElementById("onlyWhenDetected");
 const whenNotDetected = document.getElementById("whenNotDetected");
 const statusBadge = document.getElementById("statusBadge");
 
+/**
+ * 存入 storage.sync 前精简 slots，只保留填充必需的字段，避免超过 8KB/item 配额。
+ * currentSlotFields / sectionLabels / subQuestions 等仅在构建 prompt 时有用，无需持久化。
+ */
+function slimSlotsForStorage(slots) {
+  if (!slots) return null;
+  return slots.map(s => ({
+    subCount:  s.subCount,
+    typeHint:  s.typeHint  || undefined,
+    typeCode:  s.typeCode  || undefined,
+    hasAudio:  s.hasAudio  || undefined,
+    hasImage:  s.hasImage  || undefined,
+  }));
+}
+
+/** 数字转中文序号（1→一，2→二...15→十五） */
+function toChineseNumeral(n) {
+  const digits = ["零", "一", "二", "三", "四", "五", "六", "七", "八", "九", "十"];
+  if (n <= 10) return digits[n];
+  if (n < 20) return "十" + (n % 10 === 0 ? "" : digits[n % 10]);
+  if (n < 100) return digits[Math.floor(n / 10)] + "十" + (n % 10 === 0 ? "" : digits[n % 10]);
+  return String(n);
+}
+
 /** 分析页面卡片图标：放大镜（默认与已分析态） */
 const DETECT_ICON_MAGNIFIER = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>`;
 
@@ -341,7 +365,10 @@ chrome.runtime.onMessage.addListener((msg) => {
     const desc = (currentLabels && currentLabels.length > 0)
       ? currentLabels.join("、")
       : describeStructureFromFields(msg.fields || []);
-    setDetectResultSimple(`正在遍历第 ${msg.walked}${total} 题 · ${desc}`, "text-muted");
+    // 在进度前显示题型名称（简洁格式：一、听后选择）
+    const typeHint = msg.typeHint || "";
+    const typePrefix = typeHint ? `${toChineseNumeral(msg.walked)}、${typeHint}，` : "";
+    setDetectResultSimple(`正在遍历第 ${msg.walked}${total} 题 · ${typePrefix}含：${desc}`, "text-muted");
     if (!resultEl) return;
     
     const detectBtnIcon = document.querySelector("#detect .card-icon");
@@ -580,9 +607,11 @@ document.getElementById("detect").addEventListener("click", async () => {
       fields: fields || [],
       lastDetectMessage: msg,
       pageQuestionTotal: total != null && total > 0 ? total : null,
-      pageSlots: slots && slots.length > 0 ? slots : null,
+      pageSlots: slots && slots.length > 0 ? slimSlotsForStorage(slots) : null,
       hasTopLevelAudio: !!hasTopLevelAudio,
     });
+    // 完整 slots（含 currentSlotFields/subQuestions/sectionLabels）存 local，供后端构建 prompt 用
+    chrome.storage.local.set({ pageSlotsFull: slots && slots.length > 0 ? slots : null });
     if (tab?.id) {
       chrome.storage.local.set({ fillTargetTabId: tab.id });
       if (total != null && total > 0) {
@@ -1438,6 +1467,15 @@ async function restoreParseState() {
 
   if (parseState.status === "parsing") {
     setDropZoneState("parsing");
+    // 用后台持久化的 startedAt 计算真实耗时，避免弹窗关闭/后台节流导致 UI 计时不准
+    try {
+      const startedAt = parseState.startedAt;
+      const subEl = document.getElementById("dzParsingSubtext");
+      if (subEl && typeof startedAt === "number" && startedAt > 0) {
+        const elapsed = Math.max(0, Math.floor((Date.now() - startedAt) / 1000));
+        subEl.textContent = `已等待 ${elapsed} 秒 · 关闭弹窗不会中断`;
+      }
+    } catch (_) {}
   } else if (parseState.status === "done") {
     setDropZoneState("done", { questions: parseState.questions, debug_info: parseState.debug_info });
     setMsg("上次识别结果仍可填入，或重新上传新文件。", false);
@@ -2122,9 +2160,11 @@ if (detectBtn) {
       fields: fields || [],
       lastDetectMessage: message,
       pageQuestionTotal: total != null && total > 0 ? total : null,
-      pageSlots: slots && slots.length > 0 ? slots : null,
+      pageSlots: slots && slots.length > 0 ? slimSlotsForStorage(slots) : null,
       hasTopLevelAudio: !!hasTopLevelAudio,
     });
+    // 完整 slots 存 local，供后端构建 prompt 用
+    chrome.storage.local.set({ pageSlotsFull: slots && slots.length > 0 ? slots : null });
 
       const totalN = total != null && total > 0 ? `/${total}` : "";
       const msg = message || `成功分析 ${walked}${totalN} 题，了解页面结构，允许上传 Word。`;

@@ -350,10 +350,10 @@ async function handleParse(filesData) {
     }
   }, PARSE_TIMEOUT_MS);
 
-  await setState({ status: "parsing", text: "正在豆包识别…" });
-  const parseStartTime = Date.now();
+  const parseStartedAt = Date.now();
+  await setState({ status: "parsing", text: "正在豆包识别…", startedAt: parseStartedAt });
   const sendProgress = () => {
-    const elapsed = Math.floor((Date.now() - parseStartTime) / 1000);
+    const elapsed = Math.floor((Date.now() - parseStartedAt) / 1000);
     broadcastToPopup({ type: "PARSE_PROGRESS", text: "正在豆包识别…", elapsed });
   };
   sendProgress(); // 立即发一次
@@ -374,16 +374,20 @@ async function handleParse(filesData) {
     const { fields, pageQuestionTotal, pageSlots, parseDebugMode, selectedModel, reasoningEffort } = await chrome.storage.sync.get([
       "fields", "pageQuestionTotal", "pageSlots", "parseDebugMode", "selectedModel", "reasoningEffort",
     ]);
+    // 读取完整 slots（含 currentSlotFields/subQuestions 等，供后端构建 prompt 用）
+    const { pageSlotsFull } = await chrome.storage.local.get("pageSlotsFull");
     if (fields && fields.length > 0) {
       formData.append("field_structure", JSON.stringify(fields));
     }
     if (pageQuestionTotal != null && pageQuestionTotal > 0) {
       formData.append("expected_total", String(pageQuestionTotal));
     }
-    // 优先使用「分析页面」时存储的 pageSlots（含每题 subCount + sectionLabels）
-    // 兜底：实时向录题页取当前题的区块信息
-    if (pageSlots && pageSlots.length > 0) {
-      formData.append("page_structure", JSON.stringify(pageSlots));
+    // 优先用完整 slots（含 placeholder/subQuestions），兜底用精简版，再兜底实时获取
+    const slotsForBackend = (pageSlotsFull && pageSlotsFull.length > 0) ? pageSlotsFull
+                          : (pageSlots && pageSlots.length > 0) ? pageSlots
+                          : null;
+    if (slotsForBackend) {
+      formData.append("page_structure", JSON.stringify(slotsForBackend));
     } else if (parseTabId) {
       try {
         const struct = await chrome.tabs.sendMessage(parseTabId, { type: "GET_PAGE_STRUCTURE" });
