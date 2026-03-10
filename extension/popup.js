@@ -446,8 +446,10 @@ function showPausedFillUI(pausedQuestion, remaining) {
   if (!resumeBtn) return;
 
   const count = remaining ? remaining.length : 0;
+  // 转换为在整个 _lastToFill 中的绝对题号（1-based）
+  const absQuestion = _lastFillOffset + pausedQuestion;
   setMsg(
-    `第 ${pausedQuestion} 题保存后未自动跳转（可能有必填项未填，如音频）。` +
+    `第 ${absQuestion} 题保存后未自动跳转（可能有必填项未填，如音频）。` +
     `请手动补全该题并保存，待页面切换到下一题后，点击「继续填充」。`,
     true
   );
@@ -463,6 +465,17 @@ function showPausedFillUI(pausedQuestion, remaining) {
   } else {
     resumeBtn.classList.add("hidden");
     resumeBtn.onclick = null;
+  }
+
+  // 同步「从第X题起填充」：把输入框定位到暂停的那道题，方便用户核对后手动调整
+  if (_lastToFill && _lastToFill.length > 0) {
+    const input = document.getElementById("fillFromIndexInput");
+    if (input) {
+      input.value = absQuestion;
+      updateFillFromIndexPreview();
+    }
+    const wrap = document.getElementById("fillFromIndexWrap");
+    if (wrap) wrap.classList.remove("hidden");
   }
 }
 
@@ -651,6 +664,34 @@ function getFilesFromDrop(dataTransfer) {
 
 // ─── 记录发起上传时的录题页 tabId（避免解析期间切标签导致填充到错误页）
 let targetTabId = null;
+
+// ─── 从第X题起填充：记录最近一次 doFill 得到的规范化题目列表和起始偏移 ──────
+let _lastToFill    = null;     // 规范化后的完整题目数组
+let _lastFillOffset = 0;       // 本次 fill 在 _lastToFill 中的 0-based 起始索引
+let _isFilling     = false;    // 全局填充锁，防止并发触发多次 FILL_FORM
+
+/**
+ * 统一开关「填充中」状态：禁用/恢复所有填充按钮，设置全局锁。
+ * 需要禁用的按钮：立即填入、从第X题填入、继续填充、高级面板填入、历史记录。
+ */
+function setFillingState(on) {
+  _isFilling = on;
+  const FILL_BTN_IDS = ["fillFromResult", "fillFromIndexGo", "resumeFillBtn", "fill"];
+  for (const id of FILL_BTN_IDS) {
+    const el = document.getElementById(id);
+    if (!el) continue;
+    el.disabled        = on;
+    el.style.opacity   = on ? "0.55" : "";
+    el.style.cursor    = on ? "not-allowed" : "";
+    el.style.pointerEvents = on ? "none" : "";
+  }
+  const historyBtn = document.getElementById("jsonHistoryBtn");
+  if (historyBtn) {
+    historyBtn.disabled        = on;
+    historyBtn.style.opacity   = on ? "0.55" : "";
+    historyBtn.style.pointerEvents = on ? "none" : "";
+  }
+}
 
 // ─── 消息区 ────────────────────────────────────────────────────────────────
 // function setMsg() was moved up
@@ -898,6 +939,20 @@ function setDropZoneState(state, data = {}) {
     const upDescDone = upBtn.querySelector(".card-desc");
     if (upTitleDone) upTitleDone.textContent = "重新解析";
     if (upDescDone) upDescDone.textContent = "上传新文件重新识别";
+
+    // 识别完成后立刻预规范化题目，让「从第X题起填充」面板即时可用
+    if (qs.length > 0) {
+      (async () => {
+        const { pageQuestionTotal, pageSlots, hasTopLevelAudio } =
+          await chrome.storage.sync.get(["pageQuestionTotal", "pageSlots", "hasTopLevelAudio"]);
+        const pageTotal = pageQuestionTotal != null && pageQuestionTotal > 0 ? pageQuestionTotal : null;
+        const normalized = normalizeQuestionsToSlots(qs, pageTotal, pageSlots || null, hasTopLevelAudio);
+        // 仅展示真实题数（不含 doFill 里补齐的空题占位）
+        _lastToFill    = pageTotal && normalized.length > pageTotal ? normalized.slice(0, pageTotal) : normalized;
+        _lastFillOffset = 0;
+        showFillFromIndexUI(_lastToFill);
+      })();
+    }
   }
 }
 
@@ -1081,10 +1136,172 @@ function normalizeQuestionsToSlots(questions, pageTotal, pageSlots, hasTopLevelA
   return out;
 }
 
+// ─── 从第X题起填充：工具函数 ────────────────────────────────────────────────
+
+/** 根据当前输入框值更新预览文字 */
+function updateFillFromIndexPreview() {
+  const input   = document.getElementById("fillFromIndexInput");
+  const preview = document.getElementById("fillFromIndexPreview");
+  if (!input || !preview || !_lastToFill || _lastToFill.length === 0) {
+    if (preview) preview.textContent = "";
+    return;
+  }
+  const maxIdx = _lastToFill.length;
+  const idx    = Math.min(Math.max(parseInt(input.value, 10) || 1, 1), maxIdx) - 1;
+  const q      = _lastToFill[idx];
+  if (!q) { preview.textContent = ""; return; }
+  const typeLabel = QUESTION_TYPE_MAP[q.type] || q.type || "?";
+  const raw       = (q.question || (q.blanks && q.blanks[0]?.question) || "(无题干)").trim();
+  const excerpt   = raw.slice(0, 38) + (raw.length > 38 ? "…" : "");
+  preview.textContent = `[${typeLabel}] ${excerpt}`;
+}
+
+/** 展示「从第X题起填充」面板，并把输入框范围设为 1～total */
+function showFillFromIndexUI(questions) {
+  const wrap       = document.getElementById("fillFromIndexWrap");
+  const input      = document.getElementById("fillFromIndexInput");
+  const totalLabel = document.getElementById("fillFromIndexTotalLabel");
+  if (!wrap || !input || !totalLabel) return;
+  const total = questions.length;
+  input.max = total;
+  // 不重置已有值（用户可能已手动调整），仅将越界值夹回合法范围
+  const cur = parseInt(input.value, 10) || 1;
+  if (cur < 1 || cur > total) input.value = 1;
+  totalLabel.textContent = `/ ${total} 题起`;
+  updateFillFromIndexPreview();
+  wrap.classList.remove("hidden");
+}
+
+/** 出错时将面板滚入视野并短暂绿色边框提示，避免用户看不到 */
+function bringFillFromIndexIntoView() {
+  const wrap = document.getElementById("fillFromIndexWrap");
+  if (!wrap || wrap.classList.contains("hidden")) return;
+  // 稍微延迟等错误消息渲染完再滚动
+  setTimeout(() => {
+    wrap.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    wrap.style.transition = "box-shadow 0.25s ease";
+    wrap.style.boxShadow  = "0 0 0 2px var(--brand-green)";
+    setTimeout(() => { wrap.style.boxShadow = ""; }, 1400);
+  }, 80);
+}
+
+/** 重置时隐藏面板并清空缓存题目，同时解除填充锁（避免重置后锁残留） */
+function hideFillFromIndexUI() {
+  const wrap = document.getElementById("fillFromIndexWrap");
+  if (wrap) wrap.classList.add("hidden");
+  _lastToFill    = null;
+  _lastFillOffset = 0;
+  if (_isFilling) setFillingState(false);
+}
+
+/**
+ * 直接填充已规范化的题目切片（跳过 normalizeQuestionsToSlots 和 pageTotal 补齐），
+ * 适合从第 N 题恢复填充的场景。
+ */
+async function doFillFromNormalized(normalizedSlice, startIdx1Based) {
+  if (!normalizedSlice || normalizedSlice.length === 0) {
+    setMsg("没有可填入的题目", true);
+    return;
+  }
+  if (_isFilling) {
+    setMsg("正在填充中，请等当前任务完成后再操作。", false);
+    return;
+  }
+  let tabId = targetTabId;
+  if (!tabId) {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    tabId = tab?.id;
+  }
+  if (!tabId) { setMsg("无法确定录题页，请确认页面已打开", true); return; }
+
+  const { selectors, defaultAudioUrl, defaultImageUrl } =
+    await chrome.storage.sync.get(["selectors", "defaultAudioUrl", "defaultImageUrl"]);
+
+  setMsg(`从第 ${startIdx1Based} 题起填充，共 ${normalizedSlice.length} 题…`, false);
+  const _resumeBtn = document.getElementById("resumeFillBtn");
+  if (_resumeBtn) { _resumeBtn.classList.add("hidden"); _resumeBtn.onclick = null; }
+
+  _lastFillOffset = startIdx1Based - 1;
+  setFillingState(true);
+
+  try {
+    const result = await chrome.tabs.sendMessage(tabId, {
+      type: "FILL_FORM",
+      questions: normalizedSlice,
+      selectors,
+      defaultAudioUrl: (defaultAudioUrl || "").trim() || undefined,
+      defaultImageUrl: (defaultImageUrl || "").trim() || undefined,
+      debugSource: "parse",
+    });
+    setFillingState(false);
+    if (result?.ok === "paused") {
+      showPausedFillUI(result.pausedQuestion, result.remaining || []);
+      return;
+    }
+    if (result?.ok === false) {
+      setMsg((result.error || "填充出错") + "。", true);
+      bringFillFromIndexIntoView();
+      return;
+    }
+    setMsg(result?.message || `填充完成，共 ${result?.filled ?? normalizedSlice.length} 题。`, false);
+  } catch (e) {
+    setFillingState(false);
+    if (String(e).includes("Could not establish connection") || String(e).includes("receiving end does not exist")) {
+      setMsg("录题页未响应，请刷新该页面后再试。", true);
+    } else {
+      setMsg(`填充失败：${e.message || e}。`, true);
+    }
+    bringFillFromIndexIntoView();
+  }
+}
+
+// 事件绑定：从第X题起填充控件
+(function () {
+  const decBtn = document.getElementById("fillFromIndexDec");
+  const incBtn = document.getElementById("fillFromIndexInc");
+  const input  = document.getElementById("fillFromIndexInput");
+  const goBtn  = document.getElementById("fillFromIndexGo");
+  if (!decBtn || !incBtn || !input || !goBtn) return;
+
+  decBtn.addEventListener("click", () => {
+    const v = Math.max(1, (parseInt(input.value, 10) || 1) - 1);
+    input.value = v;
+    updateFillFromIndexPreview();
+  });
+  incBtn.addEventListener("click", () => {
+    const max = parseInt(input.max, 10) || 999;
+    const v   = Math.min(max, (parseInt(input.value, 10) || 1) + 1);
+    input.value = v;
+    updateFillFromIndexPreview();
+  });
+  input.addEventListener("input",  () => updateFillFromIndexPreview());
+  input.addEventListener("change", () => {
+    const max = parseInt(input.max, 10) || 999;
+    const v   = Math.min(max, Math.max(1, parseInt(input.value, 10) || 1));
+    input.value = v;
+    updateFillFromIndexPreview();
+  });
+  goBtn.addEventListener("click", async () => {
+    if (!_lastToFill || _lastToFill.length === 0) {
+      setMsg("暂无已解析的题目，请先上传 Word 文件", true);
+      return;
+    }
+    const max   = _lastToFill.length;
+    const idx   = Math.min(max, Math.max(1, parseInt(input.value, 10) || 1));
+    input.value = idx;
+    const slice = _lastToFill.slice(idx - 1);
+    await doFillFromNormalized(slice, idx);
+  });
+})();
+
 // ─── 触发填充 ──────────────────────────────────────────────────────────────
 async function doFill(questions) {
   if (!questions || questions.length === 0) {
     setMsg("没有可填入的题目", true);
+    return;
+  }
+  if (_isFilling) {
+    setMsg("正在填充中，请等当前任务完成后再操作。", false);
     return;
   }
 
@@ -1124,25 +1341,17 @@ async function doFill(questions) {
     }
   }
 
+  // 保存规范化后的题目列表，供「从第X题起填充」使用
+  _lastToFill    = toFill;
+  _lastFillOffset = 0;
+  showFillFromIndexUI(toFill);
+
   setMsg(trimMsg || `共 ${toFill.length} 题，正在填入录题页…`, false);
   // 开始新的填充时隐藏上次遗留的「继续填充」按钮
   const _resumeBtn = document.getElementById("resumeFillBtn");
   if (_resumeBtn) { _resumeBtn.classList.add("hidden"); _resumeBtn.onclick = null; }
 
-  const historyBtn = document.getElementById("jsonHistoryBtn");
-  if (historyBtn) {
-    historyBtn.disabled = true;
-    historyBtn.style.opacity = "0.6";
-    historyBtn.style.pointerEvents = "none";
-  }
-
-  const restoreFillBtn = () => {
-    if (historyBtn) {
-      historyBtn.disabled = false;
-      historyBtn.style.opacity = "";
-      historyBtn.style.pointerEvents = "";
-    }
-  };
+  setFillingState(true);
 
   try {
     const result = await chrome.tabs.sendMessage(tabId, {
@@ -1153,24 +1362,26 @@ async function doFill(questions) {
       defaultImageUrl: (defaultImageUrl || "").trim() || undefined,
       debugSource: "parse",
     });
-    restoreFillBtn();
+    setFillingState(false);
     if (result?.ok === "paused") {
       showPausedFillUI(result.pausedQuestion, result.remaining || []);
       return;
     }
     if (result?.ok === false) {
       setMsg((result.error || "填充出错") + "。可先点上方「复制题目列表」或「复制完整题目」把识别结果发给我排查。", true);
+      bringFillFromIndexIntoView();
       return;
     }
     const done = trimMsg || result?.message || `填充完成，共 ${result?.filled ?? toFill.length} 题。`;
     setMsg(done, false);
   } catch (e) {
-    restoreFillBtn();
+    setFillingState(false);
     if (String(e).includes("Could not establish connection") || String(e).includes("receiving end does not exist")) {
       setMsg("录题页未响应，请刷新该页面后再试。可先点上方「复制题目列表」或「复制完整题目」把识别结果发给我排查。", true);
     } else {
       setMsg(`填充失败：${e.message || e}。可先点上方「复制题目列表」或「复制完整题目」把识别结果发给我排查。`, true);
     }
+    bringFillFromIndexIntoView();
   }
 }
 
@@ -1379,6 +1590,7 @@ document.getElementById("resetParseState").addEventListener("click", () => {
   setDropZoneState("idle");
   document.getElementById("wordFiles").value = "";
   setMsg("已重置，可重新上传文件。", false);
+  hideFillFromIndexUI();
 });
 
 // ─── 右下角历史图标：点击展开最近 5 条 JSON，点击某条即填充 ─────────────────

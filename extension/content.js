@@ -2550,6 +2550,48 @@ async function runFill(questions, selectors, defaultAudioUrl, defaultImageUrl, d
           } catch (_) {}
         }
       }
+      // 一题多小题（blanks）：听力原文先填顶层，再逐小题填 blank_script_N，与题干/答案同逻辑，避免小题听力原文漏填
+      if (role === "listening_script" && hasBlanks && blanks.length > 0) {
+        try { document.querySelectorAll(".question-part").forEach((pt, pi) => pt.setAttribute("data-fill-part-idx", String(pi))); } catch (_) {}
+        const topVal = (q.listening_script || "").toString().trim();
+        if (topVal && selectorsForRole.length > 0) {
+          const firstSel = selectorsForRole[0];
+          if (firstSel) {
+            try {
+              const fieldEl = document.querySelector(firstSel);
+              if (fieldEl) {
+                const row = fieldEl.closest && fieldEl.closest(".row");
+                const ueditorShow = row && row.querySelector(".ueditor-show");
+                if (ueditorShow && ueditorShow.click) { ueditorShow.click(); await delay(450); }
+                else { (fieldEl.previousElementSibling || fieldEl.parentElement || fieldEl).click?.(); fieldEl.focus(); await delay(400); }
+              }
+            } catch (_) {}
+            fillField(firstSel, topVal);
+            log(`  fill listening_script (顶层) => ok`);
+            await delay(120);
+          }
+        }
+        for (let j = 0; j < blanks.length; j++) {
+          const val = (blanks[j] && (blanks[j].listening_script != null || blanks[j].script != null) ? String(blanks[j].listening_script || blanks[j].script || "").trim() : "") || "";
+          const sel = curSel[`blank_script_${j + 1}`] || (selectorsForRole.length > j ? selectorsForRole[j] : null);
+          if (!sel) { log(`  skip blank_script_${j + 1} (无选择器)`); continue; }
+          try {
+            const fieldEl = document.querySelector(sel);
+            if (fieldEl) {
+              if (fieldEl.scrollIntoView) fieldEl.scrollIntoView({ block: "nearest", behavior: "auto" });
+              await delay(j > 0 ? 150 : 100);
+              const row = fieldEl.closest && fieldEl.closest(".row");
+              const ueditorShow = row && row.querySelector(".ueditor-show");
+              if (ueditorShow && ueditorShow.click) { ueditorShow.click(); await delay(400); }
+              else { (fieldEl.previousElementSibling || fieldEl.parentElement || fieldEl).click?.(); fieldEl.focus(); await delay(350); }
+            }
+          } catch (_) {}
+          const ok = fillField(sel, val);
+          log(`  fill blank_script_${j + 1} => ${ok ? "ok" : "fail"} len=${val.length}`);
+          if (ok) await delay(100);
+        }
+        continue;
+      }
       // 一题多小题（blanks）：题干按小题索引分别填入多个框
       if (role === "question" && hasBlanks && selectorsForRole.length >= blanks.length) {
         for (let j = 0; j < blanks.length; j++) {
@@ -2726,6 +2768,8 @@ async function runFill(questions, selectors, defaultAudioUrl, defaultImageUrl, d
           if (filled) await delay(80);
         }
       } else {
+        // 小题听力原文已在 listening_script + hasBlanks 分支里逐空填过，此处不再重复填
+        if (hasBlanks && /^blank_script_\d+$/.test(role)) { log(`  skip ${role} (已在 listening_script 分支填过)`); continue; }
         const value = getValueForRole(role);
         if (!value) { log(`  skip ${role} (无值)`); continue; }
         // blank_script_N / blank_audio_N 用 partSel 前缀选择器，Vue/React 可能在 await delay 后清除属性，再次打标

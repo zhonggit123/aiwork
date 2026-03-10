@@ -195,6 +195,20 @@
       <button id="resumeFillBtn" class="btn btn-primary btn-full mt-2 hidden" style="margin-top:8px;">
         继续填充剩余题目
       </button>
+
+      <!-- 从第X题起填充 -->
+      <div id="fillFromIndexWrap" class="fill-from-index-wrap hidden">
+        <div class="fill-from-index-row">
+          <span class="fill-from-index-label">从第</span>
+          <button type="button" id="fillFromIndexDec" class="fill-from-index-stepper" aria-label="上一题">−</button>
+          <input type="number" id="fillFromIndexInput" min="1" value="1" class="fill-from-index-input" />
+          <button type="button" id="fillFromIndexInc" class="fill-from-index-stepper" aria-label="下一题">+</button>
+          <span id="fillFromIndexTotalLabel" class="fill-from-index-label">/ — 题起</span>
+          <button type="button" id="fillFromIndexGo" class="btn btn-brand fill-from-index-go">填入</button>
+        </div>
+        <div id="fillFromIndexPreview" class="fill-from-index-preview"></div>
+      </div>
+
       <button id="copyErrBtn" class="btn btn-primary btn-full mt-2 hidden" style="margin-top:8px;">
         复制错误信息
       </button>

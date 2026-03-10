@@ -1267,6 +1267,81 @@ input[type="text"]:focus {
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
 }
 
+/* ── 从第X题起填充 ─────────────────────────────────────────── */
+.fill-from-index-wrap {
+  margin-top: 8px;
+}
+.fill-from-index-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 7px 10px;
+  background: var(--gray-50);
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius-sm);
+}
+.fill-from-index-label {
+  font-size: 12px;
+  color: var(--gray-600);
+  white-space: nowrap;
+}
+.fill-from-index-stepper {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--gray-300);
+  border-radius: 4px;
+  background: #fff;
+  font-size: 15px;
+  line-height: 1;
+  color: var(--gray-700);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: background 0.15s;
+}
+.fill-from-index-stepper:hover {
+  background: var(--gray-100);
+}
+.fill-from-index-input {
+  width: 44px;
+  text-align: center;
+  padding: 3px 4px;
+  border: 1px solid var(--gray-300);
+  border-radius: 4px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--gray-800);
+  -moz-appearance: textfield;
+}
+.fill-from-index-input:focus {
+  outline: none;
+  border-color: var(--gray-500);
+}
+.fill-from-index-input::-webkit-outer-spin-button,
+.fill-from-index-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.fill-from-index-go {
+  margin-left: auto;
+  padding: 4px 12px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.fill-from-index-preview {
+  margin-top: 5px;
+  font-size: 11px;
+  color: var(--gray-500);
+  min-height: 14px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 0 2px;
+}
+
 /* 中断识别按钮（drop-zone 内）*/
 .btn-cancel {
   display: inline-flex;
