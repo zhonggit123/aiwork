@@ -904,14 +904,22 @@ function detectForm() {
       const ed = row.querySelector("textarea, [contenteditable=true], script[type='text/plain'][id], div.edui-default[id]");
       if (ed) {
         const sel = getSelector(ed);
-        if (sel && !seen.has(sel)) { seen.add(sel); selectors.question = sel; fields.push({ role: "question", selector: sel, label: capText }); }
+        if (sel && !seen.has(sel)) {
+          seen.add(sel); selectors.question = sel;
+          const ph = (ed.getAttribute("placeholder") || "").trim().slice(0, 80);
+          fields.push({ role: "question", selector: sel, label: capText, ...(ph ? { placeholder: ph } : {}) });
+        }
       }
     }
     if (!selectors.keyword && /参考单词|送评单词|送评词|参考词/.test(capText)) {
       const ed = row.querySelector("textarea, input[type='text'], [contenteditable=true]");
       if (ed) {
         const sel = getSelector(ed);
-        if (sel && !seen.has(sel)) { seen.add(sel); selectors.keyword = sel; fields.push({ role: "keyword", selector: sel, label: capText }); }
+        if (sel && !seen.has(sel)) {
+          seen.add(sel); selectors.keyword = sel;
+          const ph = (ed.getAttribute("placeholder") || "").trim().slice(0, 80);
+          fields.push({ role: "keyword", selector: sel, label: capText, ...(ph ? { placeholder: ph } : {}) });
+        }
       }
     }
     if (needOptions && /设置选项|选项/.test(capText)) {
