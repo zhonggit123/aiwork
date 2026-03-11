@@ -2,10 +2,12 @@
 """
 从 Word 文档中读取题目文本，按块切分供 LLM 解析。
 """
+import re
 from pathlib import Path
 from typing import List
 
 from docx import Document
+from docx.oxml.ns import qn
 
 
 def read_word_text(docx_path: str) -> str:
@@ -32,6 +34,128 @@ def read_word_text(docx_path: str) -> str:
         if text:
             parts.append(text)
     return "\n\n".join(parts)
+
+
+_OPTION_LABEL_RE = re.compile(r'^[（(]?([A-Da-d])[)）.\s、。，]')
+
+
+def _convert_to_png(image_bytes: bytes) -> tuple:
+    """将任意格式图片字节（如 TIFF）转换为 PNG，返回 (png_bytes, 'png')。
+    若转换失败则原样返回并标记为 png（至少扩展名正确，不会因误标 tiff→png 而损坏）。
+    """
+    try:
+        import io
+        from PIL import Image
+        img = Image.open(io.BytesIO(image_bytes))
+        out = io.BytesIO()
+        img.save(out, format='PNG')
+        return out.getvalue(), 'png'
+    except Exception:
+        return image_bytes, 'png'
+
+
+def _convert_to_png(image_bytes: bytes) -> tuple:
+    """将不被浏览器支持的图片格式（如 TIFF）转换为 PNG。
+    返回 (bytes, 'png')；若转换失败则返回原始数据和 'png'（扩展名统一）。
+    """
+    try:
+        import io
+        from PIL import Image
+        img = Image.open(io.BytesIO(image_bytes))
+        out = io.BytesIO()
+        img.save(out, format='PNG')
+        return out.getvalue(), 'png'
+    except Exception:
+        return image_bytes, 'png'
+
+
+def extract_word_images(docx_path: str) -> list:
+    """从 Word 文档中提取内嵌图片（inline shapes），返回图片信息列表。
+
+    每项包含：
+      para_index   - 所在段落索引（主体段落顺序，表格内段落为 -1）
+      para_text    - 该段落文字（可能为空，例如图片独占一段）
+      prev_para_text - 前一段落文字（用于推断选项归属）
+      option_label - 推断出的选项字母 A/B/C/D，或 None
+      image_bytes  - 图片原始字节
+      image_ext    - 扩展名（jpg/png/gif/bmp/webp）
+      image_index  - 在本文档中的全局顺序（0-based）
+    """
+    path = Path(docx_path)
+    if not path.exists():
+        raise FileNotFoundError(f"Word 文件不存在: {docx_path}")
+
+    doc = Document(path)
+    results: list = []
+    img_idx = 0
+
+    def _extract_from_para(para, para_i: int, prev_text: str) -> None:
+        nonlocal img_idx
+        drawings = para._element.findall('.//' + qn('w:drawing'))
+        if not drawings:
+            return
+        para_text = para.text.strip()
+        _OPT_LETTERS = "ABCD"
+        for draw_pos, drawing in enumerate(drawings):
+            blip = drawing.find('.//' + qn('a:blip'))
+            if blip is None:
+                continue
+            r_embed = blip.get(qn('r:embed'))
+            if not r_embed:
+                continue
+            try:
+                image_part = doc.part.related_parts[r_embed]
+                image_bytes = image_part.blob
+                content_type = getattr(image_part, 'content_type', 'image/png')
+                ext = content_type.split('/')[-1].lower()
+                if ext == 'jpeg':
+                    ext = 'jpg'
+                elif ext not in ('jpg', 'png', 'gif', 'bmp', 'webp'):
+                    # TIFF 等浏览器不支持的格式 → 转换为 PNG
+                    image_bytes, ext = _convert_to_png(image_bytes)
+            except (KeyError, AttributeError):
+                continue
+
+            # 推断选项归属：
+            # 若同一段落有多张图片（如 A/B/C 都在一行），按段落内顺序 0→A, 1→B, 2→C
+            if len(drawings) > 1:
+                option_label = _OPT_LETTERS[draw_pos] if draw_pos < len(_OPT_LETTERS) else None
+            else:
+                # 单图：尝试从本段/前段文字中匹配选项字母
+                option_label = None
+                for candidate in (para_text, prev_text):
+                    m = _OPTION_LABEL_RE.match(candidate)
+                    if m:
+                        option_label = m.group(1).upper()
+                        break
+
+            results.append({
+                "para_index": para_i,
+                "para_text": para_text,
+                "prev_para_text": prev_text,
+                "option_label": option_label,
+                "image_bytes": image_bytes,
+                "image_ext": ext,
+                "image_index": img_idx,
+            })
+            img_idx += 1
+
+    # 遍历主体段落（保留顺序）
+    paragraphs = doc.paragraphs
+    for para_i, para in enumerate(paragraphs):
+        prev_text = paragraphs[para_i - 1].text.strip() if para_i > 0 else ""
+        _extract_from_para(para, para_i, prev_text)
+
+    # 遍历表格内段落（表格中的图片）
+    for table in doc.tables:
+        for row in table.rows:
+            for cell in row.cells:
+                cell_paras = cell.paragraphs
+                for pi, para in enumerate(cell_paras):
+                    prev_text = cell_paras[pi - 1].text.strip() if pi > 0 else ""
+                    _extract_from_para(para, -1, prev_text)
+
+    return results
 
 
 def chunk_text(

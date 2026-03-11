@@ -2452,6 +2452,91 @@ async function runFill(questions, selectors, defaultAudioUrl, defaultImageUrl, d
       log(`  跳过图片填充（无数据，defaultImageUrl也为空）`);
     }
 
+    // ── 选项图片上传（Word 图片提取功能）────────────────────────────────────
+    // 若 options 里包含来自本地后端 /api/images/ 的 URL，则尝试通过文件上传框上传
+    // 同时也会通过下面的文字填充把 URL 写入 imageFileName 输入框（双保险）
+    // 收集所有选项URL：顶层 q.options 及各 blank.options（多小题场景）
+    const _topOptArr = Array.isArray(q.options || q.option) ? (q.options || q.option) : [];
+    const _blanksOptArr = (q.blanks || []).flatMap(b => Array.isArray(b?.options) ? b.options : []);
+    const optionLocalUrls = [..._topOptArr, ..._blanksOptArr];
+    const hasLocalOptionImages = optionLocalUrls.some(
+      (v) => typeof v === "string" && v.includes("/api/images/") && v.startsWith("http://localhost")
+    );
+    if (hasLocalOptionImages) {
+      const _OPT_ROLES = ["option_a", "option_b", "option_c", "option_d"];
+
+      // 从 imageFileName 文本输入框的选择器推断对应的文件上传框选择器
+      const deriveFileInputSel = (textSel) => {
+        if (!textSel) return null;
+        const textEl = document.querySelector(textSel);
+        if (!textEl || !textEl.id) return null;
+        // 模式：imageFileName4 → image_upload4 > input[type=file]
+        const numMatch = textEl.id.match(/(\d+)$/);
+        if (numMatch) {
+          const n = numMatch[1];
+          const uploadContainer = document.getElementById(`image_upload${n}`);
+          if (uploadContainer) {
+            const fi = uploadContainer.querySelector("input[type='file']");
+            if (fi) return fi.id ? `#${fi.id}` : `#image_upload${n} input[type='file']`;
+          }
+        }
+        // 备用：在同一父容器内查找 input[type=file]
+        const container = textEl.closest(".row, .upload-wrap, .col, .option-upload") || textEl.parentElement;
+        if (container) {
+          const fi = container.querySelector("input[type='file']");
+          if (fi && fi.id) return `#${fi.id}`;
+        }
+        return null;
+      };
+
+      const fetchAndUpload = async (url, fileInputSel, label) => {
+        if (!fileInputSel) return;
+        try {
+          const res = await fetch(url);
+          if (res.ok) {
+            const blob = await res.blob();
+            const ext = (blob.type || "image/jpeg").split("/")[1] || "jpg";
+            const file = new File([blob], `option_${label}.${ext}`, { type: blob.type || "image/jpeg" });
+            const ok = fillFileField(fileInputSel, file);
+            log(`  选项${label} fillFileField => ${ok ? "ok" : "fail"}`);
+            if (ok) await delay(300);
+          } else {
+            log(`  选项${label} 图片 fetch 失败: ${res.status}`);
+          }
+        } catch (e) {
+          log(`  选项${label} 图片上传异常: ${e?.message}`);
+        }
+      };
+
+      const _uploadBlanks = q.blanks || [];
+      if (_uploadBlanks.length > 0) {
+        // 多小题：每个 blank 各自有 A/B/C 选项，对应不同的 DOM 上传框
+        for (let oi = 0; oi < _OPT_ROLES.length; oi++) {
+          const label = String.fromCharCode(65 + oi);
+          const textSelsForRole = qSel(curSel, _OPT_ROLES[oi]);
+          for (let j = 0; j < _uploadBlanks.length; j++) {
+            const b = _uploadBlanks[j];
+            const optUrl = typeof (b?.options?.[oi]) === "string" ? b.options[oi].trim() : "";
+            if (!optUrl.startsWith("http://localhost") || !optUrl.includes("/api/images/")) continue;
+            const fileInputSel = deriveFileInputSel(textSelsForRole[j]);
+            log(`  blank[${j}] 选项${label} 图片URL=${optUrl.slice(0, 60)} fileInputSel=${fileInputSel || "未找到"}`);
+            await fetchAndUpload(optUrl, fileInputSel, label + (j + 1));
+          }
+        }
+      } else {
+        // 单题顶层 options
+        const topOpts = Array.isArray(q.options || q.option) ? (q.options || q.option) : [];
+        for (let oi = 0; oi < topOpts.length; oi++) {
+          const optUrl = typeof topOpts[oi] === "string" ? topOpts[oi].trim() : "";
+          if (!optUrl.startsWith("http://localhost") || !optUrl.includes("/api/images/")) continue;
+          const label = String.fromCharCode(65 + oi);
+          const fileInputSel = deriveFileInputSel(qSel(curSel, _OPT_ROLES[oi])[0]);
+          log(`  顶层选项${label} 图片URL=${optUrl.slice(0, 60)} fileInputSel=${fileInputSel || "未找到"}`);
+          await fetchAndUpload(optUrl, fileInputSel, label);
+        }
+      }
+    }
+
     /** 去除选项文本头部的字母前缀，如 "A. Tim's." → "Tim's."，"(B) Dave's." → "Dave's." */
     const stripOptPrefix = (s) => {
       if (!s) return s;

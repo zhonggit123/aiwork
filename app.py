@@ -3,8 +3,10 @@
 可视化 Web 服务：上传 Word → AI 解析 → 表格展示/编辑 → 一键提交。
 启动：uvicorn app:app --reload --host 0.0.0.0 --port 8765
 """
+import os
 import sys
 import tempfile
+import uuid
 from pathlib import Path
 
 import yaml
@@ -21,7 +23,7 @@ from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from word_reader import read_word_text, chunk_text
+from word_reader import read_word_text, chunk_text, extract_word_images
 from llm_extract import (
     extract_questions_from_word_chunks_async,
     classify_file_fast,
@@ -44,6 +46,123 @@ app.add_middleware(
 # 全局 config，首次请求时加载
 _CONFIG = None
 
+# ── 图片会话管理 ──────────────────────────────────────────────────────────────
+# session_id → 图片临时目录 Path
+_IMAGE_SESSIONS: dict = {}
+# 最多保留最近 N 个会话的图片（防止磁盘占用无限增长）
+_MAX_IMAGE_SESSIONS = 8
+
+
+def _get_image_session_dir(session_id: str) -> Path:
+    """返回（并创建）该会话的图片临时目录。"""
+    img_base = Path(tempfile.gettempdir()) / "ai_luti_images"
+    session_dir = img_base / session_id
+    session_dir.mkdir(parents=True, exist_ok=True)
+    return session_dir
+
+
+def _register_image_session(session_id: str) -> None:
+    """注册新会话，超过上限时删除最早的会话目录。"""
+    import shutil
+    _IMAGE_SESSIONS[session_id] = _get_image_session_dir(session_id)
+    if len(_IMAGE_SESSIONS) > _MAX_IMAGE_SESSIONS:
+        oldest_key = next(iter(_IMAGE_SESSIONS))
+        old_dir = _IMAGE_SESSIONS.pop(oldest_key)
+        try:
+            shutil.rmtree(old_dir, ignore_errors=True)
+        except Exception:
+            pass
+
+
+def _save_option_images(extracted_images: list, session_id: str) -> list:
+    """将提取到的图片字节写入会话临时目录，返回带 filename 字段的列表（去除 image_bytes）。"""
+    session_dir = _get_image_session_dir(session_id)
+    saved = []
+    for item in extracted_images:
+        ext = item.get("image_ext", "jpg")
+        filename = f"img_{item['image_index']:04d}.{ext}"
+        dest = session_dir / filename
+        dest.write_bytes(item["image_bytes"])
+        saved.append({
+            "para_index": item["para_index"],
+            "para_text": item["para_text"],
+            "prev_para_text": item["prev_para_text"],
+            "option_label": item["option_label"],
+            "image_ext": ext,
+            "image_index": item["image_index"],
+            "filename": filename,
+        })
+    return saved
+
+
+def _enrich_questions_with_option_images(
+    questions: list,
+    saved_images: list,
+    session_id: str,
+    base_url: str,
+    page_structure: list | None = None,
+) -> list:
+    """将 saved_images 中的图片 URL 注入到题目选项里，替换 <<IMG>> 占位符。
+
+    匹配策略：按文档顺序（sequential）将图片依次分配给含有 <<IMG>> 选项的题目/小题。
+    支持两种结构：
+      - 单题顶层选项：q.options
+      - 多小题：q.blanks[j].options（AI 规定小题选项不放顶层）
+    """
+    if not saved_images:
+        return questions
+
+    # 构建 slot optionKind 映射
+    slot_option_kinds: dict = {}
+    if page_structure:
+        for slot in page_structure:
+            idx = slot.get("index", 0)
+            slot_option_kinds[idx] = slot.get("optionKind", "text")
+
+    img_ptr = 0
+
+    def _is_img_placeholder(v) -> bool:
+        return isinstance(v, str) and v.strip() == "<<IMG>>"
+
+    def _replace_options(opts: list) -> list:
+        nonlocal img_ptr
+        new_opts = []
+        for opt in opts:
+            if _is_img_placeholder(opt) and img_ptr < len(saved_images):
+                img_info = saved_images[img_ptr]
+                url = f"{base_url}/api/images/{session_id}/{img_info['filename']}"
+                new_opts.append(url)
+                img_ptr += 1
+            else:
+                new_opts.append(opt)
+        return new_opts
+
+    for q_idx, q in enumerate(questions):
+        slot_idx = q_idx + 1  # 1-indexed
+        opt_kind = slot_option_kinds.get(slot_idx, "text")
+
+        blanks = q.get("blanks") or []
+        if blanks:
+            # 多小题：遍历每个 blank，各自替换其 options
+            for blank in blanks:
+                b_opts = blank.get("options") or []
+                if not b_opts:
+                    continue
+                all_img = all(_is_img_placeholder(o) for o in b_opts if o is not None)
+                if (opt_kind == "image") or all_img:
+                    blank["options"] = _replace_options(b_opts)
+        else:
+            # 单题：替换顶层 options
+            options = q.get("options") or []
+            if not options:
+                continue
+            all_img = all(_is_img_placeholder(o) for o in options if o is not None)
+            is_image_option = (opt_kind == "image") or all_img
+            if is_image_option:
+                q["options"] = _replace_options(options)
+
+    return questions
+
 
 def get_config() -> dict:
     global _CONFIG
@@ -54,6 +173,23 @@ def get_config() -> dict:
         with open(path, "r", encoding="utf-8") as f:
             _CONFIG = yaml.safe_load(f)
     return _CONFIG
+
+
+@app.get("/api/images/{session_id}/{filename}")
+async def serve_option_image(session_id: str, filename: str):
+    """提供 Word 图片提取会话中的图片文件（供插件填充图片选项使用）。"""
+    # 安全检查：不允许路径穿越
+    if "/" in filename or "\\" in filename or ".." in filename:
+        raise HTTPException(400, "非法文件名")
+    session_dir = Path(tempfile.gettempdir()) / "ai_luti_images" / session_id
+    img_path = session_dir / filename
+    if not img_path.exists():
+        raise HTTPException(404, f"图片不存在: {filename}")
+    ext = img_path.suffix.lstrip(".").lower()
+    mime_map = {"jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png",
+                "gif": "image/gif", "bmp": "image/bmp", "webp": "image/webp"}
+    media_type = mime_map.get(ext, "image/jpeg")
+    return FileResponse(str(img_path), media_type=media_type)
 
 
 class SubmitBody(BaseModel):
@@ -78,6 +214,23 @@ async def _read_word_content(content: bytes) -> str:
     finally:
         Path(tmp).unlink(missing_ok=True)
     return text
+
+
+async def _read_word_content_with_images(content: bytes) -> tuple:
+    """读取 Word 文件内容（文字 + 图片），异步，返回 (text, extracted_images)。"""
+    import asyncio
+
+    with tempfile.NamedTemporaryFile(suffix=".docx", delete=False) as fp:
+        fp.write(content)
+        tmp = fp.name
+    try:
+        text, images = await asyncio.gather(
+            asyncio.to_thread(read_word_text, tmp),
+            asyncio.to_thread(extract_word_images, tmp),
+        )
+    finally:
+        Path(tmp).unlink(missing_ok=True)
+    return text, images
 
 
 async def _parse_one_file(
@@ -218,18 +371,35 @@ async def parse_word_multiple(
     }
     print(f"[parse-multiple] 使用模型: {llm_params['model']}, 思考程度: {effort}")
 
-    # 1. 读取所有文件内容
+    # 1. 读取所有文件内容（文字 + 图片并行提取）
     filenames = [f.filename for f in valid]
     contents = [await f.read() for f in valid]
-    texts = await asyncio.gather(*[_read_word_content(c) for c in contents])
-    
+    text_and_images = await asyncio.gather(*[_read_word_content_with_images(c) for c in contents])
+
+    # 生成本次解析的图片会话 ID，保存提取到的图片到临时目录
+    session_id = str(uuid.uuid4())
+    all_extracted_images: list = []
+    for _text, _imgs in text_and_images:
+        all_extracted_images.extend(_imgs)
+    if all_extracted_images:
+        saved_images = _save_option_images(all_extracted_images, session_id)
+        _register_image_session(session_id)
+        print(f"[parse-multiple] 从 Word 提取图片 {len(all_extracted_images)} 张，会话 {session_id}")
+    else:
+        saved_images = []
+
+    # 推断本地服务器 base_url（供图片 URL 拼接）
+    _port = 8766
+    _image_base_url = f"http://localhost:{_port}"
+
     files_data = []
     for i in range(len(valid)):
+        text_i, _ = text_and_images[i]
         # 快速识别文件类型（不调 LLM）
-        file_info = classify_file_fast(filenames[i], texts[i])
+        file_info = classify_file_fast(filenames[i], text_i)
         files_data.append({
             "filename": filenames[i],
-            "text": texts[i],
+            "text": text_i,
             "content": contents[i],
             **file_info,
         })
@@ -347,6 +517,29 @@ async def parse_word_multiple(
                 questions = out
 
         print(f"[parse-multiple] 解析完成，共 {len(questions)} 题")
+
+        # ── 图片选项注入 ──────────────────────────────────────────────────────
+        if saved_images:
+            parsed_slots = None
+            if page_structure and page_structure.strip():
+                try:
+                    parsed_slots = json_module.loads(page_structure)
+                except Exception:
+                    parsed_slots = None
+            questions = _enrich_questions_with_option_images(
+                questions,
+                saved_images,
+                session_id,
+                _image_base_url,
+                parsed_slots,
+            )
+            injected = sum(
+                1 for q in questions
+                for opt in q.get("options", [])
+                if isinstance(opt, str) and opt.startswith(_image_base_url)
+            )
+            print(f"[parse-multiple] 图片选项注入完成，共替换 {injected} 个选项")
+
         result = {"questions": questions}
         if debug_info is not None:
             result["debug_info"] = debug_info
