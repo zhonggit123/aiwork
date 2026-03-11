@@ -16,6 +16,12 @@ hidden_imports = [
     'uvicorn.protocols.http', 'uvicorn.protocols.http.auto', 'uvicorn.protocols.websockets',
     'uvicorn.protocols.websockets.auto', 'uvicorn.lifespan', 'uvicorn.lifespan.on',
     'multipart', 'python_multipart',
+    # 图片处理（Word 图片提取 + TIFF/CMYK 转 JPEG）
+    'PIL', 'PIL.Image', 'PIL.JpegImagePlugin', 'PIL.PngImagePlugin',
+    'PIL.TiffImagePlugin', 'PIL.BmpImagePlugin', 'PIL.GifImagePlugin',
+    'PIL.WebPImagePlugin', 'PIL.ImageFile',
+    # JSON 修复（LLM 输出容错）
+    'json_repair',
 ]
 
 # 数据文件：静态页、示例目录、配置模板（与 exe 同目录会放 config.example.yaml）

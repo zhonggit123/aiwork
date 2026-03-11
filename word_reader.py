@@ -39,19 +39,38 @@ def read_word_text(docx_path: str) -> str:
 _OPTION_LABEL_RE = re.compile(r'^[（(]?([A-Da-d])[)）.\s、。，]')
 
 
-def _convert_to_png(image_bytes: bytes) -> tuple:
-    """将任意格式图片字节（如 TIFF）转换为 PNG，返回 (png_bytes, 'png')。
-    若转换失败则原样返回并标记为 png（至少扩展名正确，不会因误标 tiff→png 而损坏）。
+def _convert_to_web_image(image_bytes: bytes) -> tuple:
+    """将任意格式图片（如 TIFF/CMYK/调色板）转换为标准 JPEG，返回 (jpeg_bytes, 'jpg')。
+
+    强制转为 RGB 模式，确保浏览器和各平台均可正常渲染。
+    若转换失败则尝试输出 PNG，再失败则原样返回（防崩溃）。
     """
     try:
         import io
         from PIL import Image
         img = Image.open(io.BytesIO(image_bytes))
+        # 统一转为 RGB（处理 CMYK / LAB / 调色板 / RGBA 等所有色彩模式）
+        if img.mode == 'RGBA':
+            # 透明通道合成白底
+            bg = Image.new('RGB', img.size, (255, 255, 255))
+            bg.paste(img, mask=img.split()[3])
+            img = bg
+        elif img.mode != 'RGB':
+            img = img.convert('RGB')
         out = io.BytesIO()
-        img.save(out, format='PNG')
-        return out.getvalue(), 'png'
+        img.save(out, format='JPEG', quality=85, optimize=True)
+        return out.getvalue(), 'jpg'
     except Exception:
-        return image_bytes, 'png'
+        try:
+            import io
+            from PIL import Image
+            img = Image.open(io.BytesIO(image_bytes))
+            img = img.convert('RGB')
+            out = io.BytesIO()
+            img.save(out, format='PNG')
+            return out.getvalue(), 'png'
+        except Exception:
+            return image_bytes, 'jpg'
 
 
 def _convert_to_png(image_bytes: bytes) -> tuple:
@@ -110,9 +129,9 @@ def extract_word_images(docx_path: str) -> list:
                 ext = content_type.split('/')[-1].lower()
                 if ext == 'jpeg':
                     ext = 'jpg'
-                elif ext not in ('jpg', 'png', 'gif', 'bmp', 'webp'):
-                    # TIFF 等浏览器不支持的格式 → 转换为 PNG
-                    image_bytes, ext = _convert_to_png(image_bytes)
+                elif ext not in ('jpg', 'png', 'gif', 'webp'):
+                    # TIFF/BMP 等浏览器兼容性差的格式 → 转换为 JPEG
+                    image_bytes, ext = _convert_to_web_image(image_bytes)
             except (KeyError, AttributeError):
                 continue
 
