@@ -632,35 +632,54 @@ def extract_json_from_response(content: str) -> List[Dict[str, Any]]:
         if match:
             content = match.group(1).strip()
 
-    def _try_parse(s: str):
-        try:
-            data = json.loads(s)
-        except json.JSONDecodeError:
-            data = json.loads(_repair_json(s))
+    def _coerce_to_list(data) -> list:
         if isinstance(data, list):
             return data
         if isinstance(data, dict) and "questions" in data:
             return data["questions"]
-        return [data]
+        if isinstance(data, dict):
+            return [data]
+        return []
+
+    def _try_parse(s: str) -> list:
+        # 第1步：标准解析
+        try:
+            return _coerce_to_list(json.loads(s))
+        except json.JSONDecodeError:
+            pass
+        # 第2步：自研轻量修复（处理裸换行、未转义引号）
+        try:
+            return _coerce_to_list(json.loads(_repair_json(s)))
+        except json.JSONDecodeError:
+            pass
+        # 第3步：json_repair 库（处理缺冒号、截断、多余逗号等复杂情况）
+        try:
+            import json_repair
+            repaired = json_repair.repair_json(s, return_objects=True)
+            result = _coerce_to_list(repaired)
+            if result:
+                print("[JSON修复] json_repair 成功修复了模型输出", flush=True)
+                return result
+        except Exception as e_repair:
+            print(f"[JSON修复] json_repair 失败: {e_repair}", flush=True)
+        raise json.JSONDecodeError("所有修复方式均失败", s, 0)
 
     try:
         return _try_parse(content)
     except json.JSONDecodeError:
-        # 尝试找到第一个 [ 到最后一个 ] 之间的内容
+        # 尝试找到第一个 [ 到最后一个 ] 之间的内容再解析
         start = content.find("[")
         end = content.rfind("]") + 1
         if start >= 0 and end > start:
             try:
                 return _try_parse(content[start:end])
             except json.JSONDecodeError as e2:
-                # 打印错误位置附近的上下文（±200字），便于排查
                 err_pos = e2.pos if hasattr(e2, "pos") else 0
                 ctx_start = max(0, err_pos - 200)
                 ctx_end = min(len(content), err_pos + 200)
-                ctx = content[ctx_start:ctx_end]
                 print(
                     f"[JSON解析失败] {e2}\n"
-                    f"--- 错误位置上下文（char {ctx_start}~{ctx_end}）---\n{ctx}\n"
+                    f"--- 错误位置上下文（char {ctx_start}~{ctx_end}）---\n{content[ctx_start:ctx_end]}\n"
                     f"--- LLM 原始回复（前3000字）---\n{content[:3000]}\n--- end ---",
                     flush=True,
                 )
