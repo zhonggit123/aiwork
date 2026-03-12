@@ -18,3 +18,9 @@ requests>=2.31.0
 fastapi>=0.104.0
 uvicorn[standard]>=0.24.0
 python-multipart>=0.0.6
+
+# 图片处理（Word 图片提取、TIFF 转 JPEG）
+Pillow>=10.0.0
+
+# JSON 修复（LLM 输出容错）
+json-repair>=0.7.0
