@@ -2493,15 +2493,93 @@ async function runFill(questions, selectors, defaultAudioUrl, defaultImageUrl, d
         if (!fileInputSel) return;
         try {
           const res = await fetch(url);
-          if (res.ok) {
-            const blob = await res.blob();
-            const ext = (blob.type || "image/jpeg").split("/")[1] || "jpg";
-            const file = new File([blob], `option_${label}.${ext}`, { type: blob.type || "image/jpeg" });
+          if (!res.ok) { log(`  选项${label} fetch失败: ${res.status}`); return; }
+          const blob = await res.blob();
+          const ext = (blob.type || "image/jpeg").split("/")[1] || "jpg";
+          const file = new File([blob], `option_${label}.${ext}`, { type: blob.type || "image/jpeg" });
+          log(`  选项${label} File创建: name=${file.name} size=${file.size} type=${file.type}`);
+
+          const fileEl = document.querySelector(fileInputSel);
+          if (!fileEl) { log(`  选项${label} 找不到file input`); return; }
+
+          // ── 方式1：jQuery uploadify API（最可靠，直接写入内部队列并上传）
+          let uploaded = false;
+          const $ = window.jQuery || window.$;
+          if ($ && typeof $.fn.uploadify === "function") {
+            try {
+              // 把 File 注入 uploadify 内部队列
+              const settings = $(fileEl).data("uploadify") || $(fileEl).closest("[class*='uploadify'],[id*='upload']").data("uploadify");
+              if (settings) {
+                log(`  选项${label} 找到uploadify settings，尝试直接上传`);
+                // 构造 uploadify queue item 并调用其上传逻辑
+                const xhr = new XMLHttpRequest();
+                const fd = new FormData();
+                const fileFieldName = settings.fileObjName || settings.fileField || "Filedata";
+                fd.append(fileFieldName, file);
+                // 附加 uploadify 的额外 formData
+                if (settings.formData) {
+                  Object.entries(settings.formData).forEach(([k, v]) => fd.append(k, v));
+                }
+                const uploadUrl = settings.uploader || settings.uploadScript;
+                if (uploadUrl) {
+                  await new Promise((resolve) => {
+                    xhr.open("POST", uploadUrl);
+                    xhr.withCredentials = true;
+                    xhr.onload = () => {
+                      log(`  选项${label} uploadify直传 => ${xhr.status} ${xhr.responseText.slice(0, 100)}`);
+                      // uploadify 回调：把返回的文件名写入 imageFileName input
+                      try {
+                        const resp = JSON.parse(xhr.responseText);
+                        const fname = resp.file_path || resp.fileName || resp.filename || resp.name || resp.url || "";
+                        if (fname) {
+                          const textSelIdx = _OPT_ROLES.indexOf(
+                            _uploadBlanks.length > 0
+                              ? _OPT_ROLES.find((_, oi2) => String.fromCharCode(65 + oi2) === label[0])
+                              : _OPT_ROLES[label.charCodeAt(0) - 65]
+                          );
+                          // 尝试更新对应 imageFileName 输入框
+                          const allOptSels = _OPT_ROLES.map(r => qSel(curSel, r)[0]);
+                          const matchSel = allOptSels.find(s => {
+                            const el2 = s && document.querySelector(s);
+                            return el2 && el2.closest("[id*='upload']") === fileEl.closest("[id*='upload']");
+                          });
+                          if (matchSel) {
+                            const nativeDesc = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value");
+                            const targetEl = document.querySelector(matchSel);
+                            if (targetEl && nativeDesc && nativeDesc.set) {
+                              nativeDesc.set.call(targetEl, fname);
+                              targetEl.dispatchEvent(new Event("input", { bubbles: true }));
+                              targetEl.dispatchEvent(new Event("change", { bubbles: true }));
+                              log(`  选项${label} imageFileName 已更新: ${fname}`);
+                            }
+                          }
+                        }
+                      } catch (_) {}
+                      resolve();
+                    };
+                    xhr.onerror = () => { log(`  选项${label} uploadify直传网络错误`); resolve(); };
+                    xhr.send(fd);
+                  });
+                  uploaded = true;
+                  await delay(300);
+                }
+              }
+            } catch (e2) {
+              log(`  选项${label} uploadify直传异常: ${e2?.message}`);
+            }
+          }
+
+          // ── 方式2：fillFileField 兜底（验证 el.files 是否正确设置）
+          if (!uploaded) {
             const ok = fillFileField(fileInputSel, file);
-            log(`  选项${label} fillFileField => ${ok ? "ok" : "fail"}`);
-            if (ok) await delay(300);
-          } else {
-            log(`  选项${label} 图片 fetch 失败: ${res.status}`);
+            // 验证 el.files 实际上是否被设置（某些 uploadify 会清空）
+            const actualSize = fileEl.files?.[0]?.size ?? -1;
+            log(`  选项${label} fillFileField=${ok} el.files[0].size=${actualSize}(期望${file.size})`);
+            if (ok && actualSize === file.size) {
+              await delay(1500);
+            } else {
+              log(`  选项${label} ⚠ el.files未正确设置，uploadify可能不支持程序化注入`);
+            }
           }
         } catch (e) {
           log(`  选项${label} 图片上传异常: ${e?.message}`);
@@ -2553,9 +2631,16 @@ async function runFill(questions, selectors, defaultAudioUrl, defaultImageUrl, d
     /**
      * 将 AI 返回的值中的 <<IMG>> 占位符替换为高级设置里配置的默认图片 URL/文件名。
      * 用于图片类型选项：AI 对图片选项统一输出 "<<IMG>>"，填充时替换为实际文件名。
+     * 同时过滤掉 localhost 图片 URL（这类值由 uploadify 上传回调写入，不应覆写进文本框）。
      */
     const resolveImgPlaceholder = (val) => {
       if (typeof val === "string" && val.trim() === "<<IMG>>") {
+        return (defaultImageUrl || "").toString().trim();
+      }
+      // localhost 图片 URL 不写进 imageFileName 文本框，
+      // 让 uploadify 异步上传完成后自己回填平台文件名；
+      // 若上传失败，fallback 到 defaultImageUrl（与无图时行为一致）。
+      if (typeof val === "string" && val.startsWith("http://localhost") && val.includes("/api/images/")) {
         return (defaultImageUrl || "").toString().trim();
       }
       return val;
