@@ -282,8 +282,20 @@ restoreParseState();
   dropdown.addEventListener("click", (e) => e.stopPropagation());
 
   // ── 模型选择 ──────────────────────────────────────────────
-  const { selectedModel, reasoningEffort: savedEffort, parseDebugMode: savedDebug, defaultAudioUrl: savedAudio, defaultImageUrl: savedImage }
-    = await chrome.storage.sync.get(["selectedModel", "reasoningEffort", "parseDebugMode", "defaultAudioUrl", "defaultImageUrl"]);
+  const { 
+    selectedModel, 
+    reasoningEffort: savedEffort, 
+    parseDebugMode: savedDebug, 
+    defaultAudioUrl: savedAudio, 
+    defaultImageUrl: savedImage,
+    ttsFemaleVoice: savedFemaleVoice,
+    ttsMaleVoice: savedMaleVoice,
+    ttsFemaleSpeed: savedFemaleSpeed,
+    ttsMaleSpeed: savedMaleSpeed,
+  } = await chrome.storage.sync.get([
+    "selectedModel", "reasoningEffort", "parseDebugMode", "defaultAudioUrl", "defaultImageUrl",
+    "ttsFemaleVoice", "ttsMaleVoice", "ttsFemaleSpeed", "ttsMaleSpeed"
+  ]);
 
   const radios = document.querySelectorAll('input[name="modelChoice"]');
   const savedM = selectedModel || "doubao-seed-2-0-pro-260215";
@@ -352,6 +364,246 @@ restoreParseState();
     imageEl.addEventListener("change", saveImage);
     imageEl.addEventListener("blur",   saveImage);
   }
+
+  // ── TTS 语音合成设置 ──────────────────────────────────────────
+  const ttsFemaleVoiceEl = document.getElementById("ttsFemaleVoice");
+  const ttsMaleVoiceEl = document.getElementById("ttsMaleVoice");
+  const ttsFemaleSpeedEl = document.getElementById("ttsFemaleSpeed");
+  const ttsMaleSpeedEl = document.getElementById("ttsMaleSpeed");
+  const ttsFemaleVolumeEl = document.getElementById("ttsFemaleVolume");
+  const ttsMaleVolumeEl = document.getElementById("ttsMaleVolume");
+
+  // 从 storage 获取音量设置
+  const { ttsFemaleVolume: savedFemaleVolume, ttsMaleVolume: savedMaleVolume } = 
+    await chrome.storage.sync.get(["ttsFemaleVolume", "ttsMaleVolume"]);
+
+  // TTS 默认值
+  const TTS_DEFAULTS = {
+    femaleVoice: "en_female_amanda_mars_bigtts",
+    maleVoice: "zh_male_jieshuonansheng_mars_bigtts",  // Morgan 解说男声
+    femaleSpeed: "0.85",
+    maleSpeed: "0.85",
+    femaleVolume: "1.0",
+    maleVolume: "1.0",
+  };
+
+  // 女声设置
+  if (ttsFemaleVoiceEl) {
+    ttsFemaleVoiceEl.value = savedFemaleVoice || TTS_DEFAULTS.femaleVoice;
+    ttsFemaleVoiceEl.addEventListener("change", () => {
+      chrome.storage.sync.set({ ttsFemaleVoice: ttsFemaleVoiceEl.value });
+    });
+  }
+  if (ttsFemaleSpeedEl) {
+    ttsFemaleSpeedEl.value = savedFemaleSpeed || TTS_DEFAULTS.femaleSpeed;
+    ttsFemaleSpeedEl.addEventListener("change", () => {
+      chrome.storage.sync.set({ ttsFemaleSpeed: ttsFemaleSpeedEl.value });
+    });
+  }
+  if (ttsFemaleVolumeEl) {
+    ttsFemaleVolumeEl.value = savedFemaleVolume || TTS_DEFAULTS.femaleVolume;
+    ttsFemaleVolumeEl.addEventListener("change", () => {
+      chrome.storage.sync.set({ ttsFemaleVolume: ttsFemaleVolumeEl.value });
+    });
+  }
+
+  // 男声设置
+  if (ttsMaleVoiceEl) {
+    ttsMaleVoiceEl.value = savedMaleVoice || TTS_DEFAULTS.maleVoice;
+    ttsMaleVoiceEl.addEventListener("change", () => {
+      chrome.storage.sync.set({ ttsMaleVoice: ttsMaleVoiceEl.value });
+    });
+  }
+  if (ttsMaleSpeedEl) {
+    ttsMaleSpeedEl.value = savedMaleSpeed || TTS_DEFAULTS.maleSpeed;
+    ttsMaleSpeedEl.addEventListener("change", () => {
+      chrome.storage.sync.set({ ttsMaleSpeed: ttsMaleSpeedEl.value });
+    });
+  }
+  if (ttsMaleVolumeEl) {
+    ttsMaleVolumeEl.value = savedMaleVolume || TTS_DEFAULTS.maleVolume;
+    ttsMaleVolumeEl.addEventListener("change", () => {
+      chrome.storage.sync.set({ ttsMaleVolume: ttsMaleVolumeEl.value });
+    });
+  }
+
+  // TTS 重置默认值按钮
+  const ttsResetBtn = document.getElementById("ttsResetDefaults");
+  if (ttsResetBtn) {
+    ttsResetBtn.addEventListener("click", () => {
+      // 清除存储中的 TTS 设置
+      chrome.storage.sync.remove([
+        "ttsFemaleVoice", "ttsMaleVoice",
+        "ttsFemaleSpeed", "ttsMaleSpeed",
+        "ttsFemaleVolume", "ttsMaleVolume"
+      ], () => {
+        // 重置 UI 为默认值
+        if (ttsFemaleVoiceEl) ttsFemaleVoiceEl.value = TTS_DEFAULTS.femaleVoice;
+        if (ttsMaleVoiceEl) ttsMaleVoiceEl.value = TTS_DEFAULTS.maleVoice;
+        if (ttsFemaleSpeedEl) ttsFemaleSpeedEl.value = TTS_DEFAULTS.femaleSpeed;
+        if (ttsMaleSpeedEl) ttsMaleSpeedEl.value = TTS_DEFAULTS.maleSpeed;
+        if (ttsFemaleVolumeEl) ttsFemaleVolumeEl.value = TTS_DEFAULTS.femaleVolume;
+        if (ttsMaleVolumeEl) ttsMaleVolumeEl.value = TTS_DEFAULTS.maleVolume;
+        // 显示提示
+        ttsResetBtn.textContent = "已重置 ✓";
+        setTimeout(() => { ttsResetBtn.textContent = "重置"; }, 1500);
+      });
+    });
+  }
+
+  // ── TTS 试听弹窗 ──────────────────────────────────────────
+  const ttsTestModal = document.getElementById("ttsTestModal");
+  const ttsTestModalTitle = document.getElementById("ttsTestModalTitle");
+  const ttsTestModalClose = document.getElementById("ttsTestModalClose");
+  const ttsTestModalOk = document.getElementById("ttsTestModalOk");
+  const ttsTestText = document.getElementById("ttsTestText");
+  const ttsTestInfo = document.getElementById("ttsTestInfo");
+  const ttsTestPlay = document.getElementById("ttsTestPlay");
+  const ttsTestDownload = document.getElementById("ttsTestDownload");
+  const ttsTestFemaleBtn = document.getElementById("ttsTestFemale");
+  const ttsTestMaleBtn = document.getElementById("ttsTestMale");
+
+  let currentTestGender = "female";
+  let currentAudioBase64 = null;
+  let currentAudioPlayer = null;
+
+  const openTtsTestModal = (gender) => {
+    currentTestGender = gender;
+    currentAudioBase64 = null;
+    ttsTestModalTitle.textContent = gender === "female" ? "👩 试听女声" : "👨 试听男声";
+    ttsTestInfo.textContent = "";
+    ttsTestInfo.className = "modal-info";
+    // 设置默认英文试听文本
+    if (ttsTestText && !ttsTestText.value?.trim()) {
+      ttsTestText.value = "Hello, this is a test. The quick brown fox jumps over the lazy dog.";
+    }
+    ttsTestModal.classList.remove("hidden");
+  };
+
+  const closeTtsTestModal = () => {
+    ttsTestModal.classList.add("hidden");
+    if (currentAudioPlayer) {
+      currentAudioPlayer.pause();
+      currentAudioPlayer = null;
+    }
+  };
+
+  if (ttsTestFemaleBtn) ttsTestFemaleBtn.addEventListener("click", () => openTtsTestModal("female"));
+  if (ttsTestMaleBtn) ttsTestMaleBtn.addEventListener("click", () => openTtsTestModal("male"));
+  if (ttsTestModalClose) ttsTestModalClose.addEventListener("click", closeTtsTestModal);
+  if (ttsTestModalOk) ttsTestModalOk.addEventListener("click", closeTtsTestModal);
+  if (ttsTestModal) {
+    ttsTestModal.querySelector(".modal-backdrop")?.addEventListener("click", closeTtsTestModal);
+  }
+
+  // 试听按钮
+  if (ttsTestPlay) {
+    ttsTestPlay.addEventListener("click", async () => {
+      const text = ttsTestText?.value?.trim();
+      if (!text) {
+        ttsTestInfo.textContent = "请输入要合成的文本";
+        ttsTestInfo.className = "modal-info error";
+        return;
+      }
+
+      // 获取当前设置
+      const voice = currentTestGender === "female" 
+        ? (ttsFemaleVoiceEl?.value || "zh_female_wanwanxiaohe_moon_bigtts")
+        : (ttsMaleVoiceEl?.value || "zh_male_wennuanahu_moon_bigtts");
+      const speed = currentTestGender === "female"
+        ? parseFloat(ttsFemaleSpeedEl?.value || "0.85")
+        : parseFloat(ttsMaleSpeedEl?.value || "0.85");
+      const volume = currentTestGender === "female"
+        ? parseFloat(ttsFemaleVolumeEl?.value || "1.0")
+        : parseFloat(ttsMaleVolumeEl?.value || "1.0");
+
+      // 检测英文音色是否包含中文
+      const isEnglishVoice = voice.startsWith("en_");
+      const hasChinese = /[\u4e00-\u9fa5]/.test(text);
+      if (isEnglishVoice && hasChinese) {
+        ttsTestInfo.textContent = "当前选择的是英文音色，不支持中文内容。请使用纯英文文本或切换为中文音色。";
+        ttsTestInfo.className = "modal-info error";
+        return;
+      }
+
+      ttsTestInfo.textContent = "正在合成音频...";
+      ttsTestInfo.className = "modal-info loading";
+
+      try {
+        const resp = await fetch("http://127.0.0.1:8766/api/tts", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            text,
+            speaker: voice,
+            speed_ratio: speed,
+            volume_ratio: volume,
+            format: "mp3",
+            sample_rate: 24000,
+          }),
+        });
+
+        if (!resp.ok) {
+          const errText = await resp.text().catch(() => "");
+          throw new Error(errText || `HTTP ${resp.status}`);
+        }
+
+        const data = await resp.json();
+        if (!data.audioBase64) {
+          throw new Error("返回数据无音频");
+        }
+
+        currentAudioBase64 = data.audioBase64;
+        ttsTestInfo.textContent = `合成成功！语速: ${speed}x, 音量: ${volume}x`;
+        ttsTestInfo.className = "modal-info";
+
+        // 自动播放
+        const audioUrl = `data:audio/mp3;base64,${currentAudioBase64}`;
+        if (currentAudioPlayer) currentAudioPlayer.pause();
+        currentAudioPlayer = new Audio(audioUrl);
+        currentAudioPlayer.volume = Math.min(volume, 1.0);
+        currentAudioPlayer.play();
+
+      } catch (e) {
+        ttsTestInfo.textContent = `合成失败: ${e.message}`;
+        ttsTestInfo.className = "modal-info error";
+      }
+    });
+  }
+
+  // 下载按钮
+  if (ttsTestDownload) {
+    ttsTestDownload.addEventListener("click", () => {
+      if (!currentAudioBase64) {
+        ttsTestInfo.textContent = "请先点击试听生成音频";
+        ttsTestInfo.className = "modal-info error";
+        return;
+      }
+
+      const blob = base64ToBlob(currentAudioBase64, "audio/mpeg");
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `tts_${currentTestGender}_${Date.now()}.mp3`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      ttsTestInfo.textContent = "下载已开始";
+      ttsTestInfo.className = "modal-info";
+    });
+  }
+
+  // base64 转 Blob
+  function base64ToBlob(base64, mimeType) {
+    const byteChars = atob(base64);
+    const byteNumbers = new Array(byteChars.length);
+    for (let i = 0; i < byteChars.length; i++) {
+      byteNumbers[i] = byteChars.charCodeAt(i);
+    }
+    const byteArray = new Uint8Array(byteNumbers);
+    return new Blob([byteArray], { type: mimeType });
+  }
 })();
 
 // ─── 接收来自 background.js 和 content.js 的实时消息 ───────────────────────
@@ -406,12 +658,17 @@ chrome.runtime.onMessage.addListener((msg) => {
     // 同时在消息区显示当前文件名
     if (msg.text) setMsg(msg.text, false);
   }
+  if (msg.type === "TTS_PROGRESS") {
+    // TTS 进度现在在录题页面上显示，这里仅作日志记录
+    console.log("[TTS] 进度:", msg);
+  }
   if (msg.type === "PARSE_DONE") {
     setDropZoneState("done", { questions: msg.questions, debug_info: msg.debug_info });
     setMsg("识别完成，正在自动填入录题页…", false);
     updateFillCacheDot();
     pushJsonHistory(JSON.stringify(msg.questions), msg.debug_info || null).catch(() => {});
-    doFill(msg.questions);
+    // TTS 音频合成在 content.js 填充时异步进行
+    doFill(msg.questions, true);
   }
   if (msg.type === "PARSE_ERROR") {
     setDropZoneState("idle");
@@ -1249,8 +1506,8 @@ async function doFillFromNormalized(normalizedSlice, startIdx1Based) {
   }
   if (!tabId) { setMsg("无法确定录题页，请确认页面已打开", true); return; }
 
-  const { selectors, defaultAudioUrl, defaultImageUrl } =
-    await chrome.storage.sync.get(["selectors", "defaultAudioUrl", "defaultImageUrl"]);
+  const { selectors, defaultAudioUrl, defaultImageUrl, ttsFemaleVoice, ttsMaleVoice, ttsFemaleSpeed, ttsMaleSpeed, ttsFemaleVolume, ttsMaleVolume } =
+    await chrome.storage.sync.get(["selectors", "defaultAudioUrl", "defaultImageUrl", "ttsFemaleVoice", "ttsMaleVoice", "ttsFemaleSpeed", "ttsMaleSpeed", "ttsFemaleVolume", "ttsMaleVolume"]);
 
   setMsg(`从第 ${startIdx1Based} 题起填充，共 ${normalizedSlice.length} 题…`, false);
   const _resumeBtn = document.getElementById("resumeFillBtn");
@@ -1266,6 +1523,14 @@ async function doFillFromNormalized(normalizedSlice, startIdx1Based) {
       selectors,
       defaultAudioUrl: (defaultAudioUrl || "").trim() || undefined,
       defaultImageUrl: (defaultImageUrl || "").trim() || undefined,
+      ttsSettings: {
+        femaleVoice: ttsFemaleVoice || "en_female_amanda_mars_bigtts",
+        maleVoice: ttsMaleVoice || "zh_male_jieshuonansheng_mars_bigtts",
+        femaleSpeed: parseFloat(ttsFemaleSpeed) || 0.85,
+        maleSpeed: parseFloat(ttsMaleSpeed) || 0.85,
+        femaleVolume: parseFloat(ttsFemaleVolume) || 1.0,
+        maleVolume: parseFloat(ttsMaleVolume) || 1.0,
+      },
       debugSource: "parse",
     });
     setFillingState(false);
@@ -1330,7 +1595,7 @@ async function doFillFromNormalized(normalizedSlice, startIdx1Based) {
 })();
 
 // ─── 触发填充 ──────────────────────────────────────────────────────────────
-async function doFill(questions) {
+async function doFill(questions, skipTts = false) {
   if (!questions || questions.length === 0) {
     setMsg("没有可填入的题目", true);
     return;
@@ -1351,7 +1616,25 @@ async function doFill(questions) {
     return;
   }
 
-  const { selectors, pageQuestionTotal, pageSlots, defaultAudioUrl, defaultImageUrl, hasTopLevelAudio } = await chrome.storage.sync.get(["selectors", "pageQuestionTotal", "pageSlots", "defaultAudioUrl", "defaultImageUrl", "hasTopLevelAudio"]);
+  // TTS 音频合成现在在 content.js 中异步进行，不再在 popup 中阻塞等待
+  // 统计需要合成的题目数，仅用于显示提示
+  const needsTtsCount = questions.filter(q => {
+    const hasScript = (q.listening_script || "").trim().length > 0;
+    const hasAudio = (q.audio_url || "").trim().length > 0 || (q.audio_base64 || "").length > 0;
+    return hasScript && !hasAudio;
+  }).length;
+  
+  if (needsTtsCount > 0) {
+    console.log(`[TTS] 有 ${needsTtsCount} 题需要合成音频，将在填充时异步进行`);
+  }
+
+  const { 
+    selectors, pageQuestionTotal, pageSlots, defaultAudioUrl, defaultImageUrl, hasTopLevelAudio,
+    ttsFemaleVoice, ttsMaleVoice, ttsFemaleSpeed, ttsMaleSpeed, ttsFemaleVolume, ttsMaleVolume
+  } = await chrome.storage.sync.get([
+    "selectors", "pageQuestionTotal", "pageSlots", "defaultAudioUrl", "defaultImageUrl", "hasTopLevelAudio",
+    "ttsFemaleVoice", "ttsMaleVoice", "ttsFemaleSpeed", "ttsMaleSpeed", "ttsFemaleVolume", "ttsMaleVolume"
+  ]);
   // 未检测过页面结构时给出提示，但不阻断填充（content.js 内 runFill 会再次 detectForm 新检测）
   const hasStructure = selectors && Object.values(selectors).some(Boolean);
   if (!hasStructure) {
@@ -1395,6 +1678,14 @@ async function doFill(questions) {
       selectors,
       defaultAudioUrl: (defaultAudioUrl || "").trim() || undefined,
       defaultImageUrl: (defaultImageUrl || "").trim() || undefined,
+      ttsSettings: {
+        femaleVoice: ttsFemaleVoice || "en_female_amanda_mars_bigtts",
+        maleVoice: ttsMaleVoice || "zh_male_jieshuonansheng_mars_bigtts",
+        femaleSpeed: parseFloat(ttsFemaleSpeed) || 0.85,
+        maleSpeed: parseFloat(ttsMaleSpeed) || 0.85,
+        femaleVolume: parseFloat(ttsFemaleVolume) || 1.0,
+        maleVolume: parseFloat(ttsMaleVolume) || 1.0,
+      },
       debugSource: "parse",
     });
     setFillingState(false);
@@ -1780,8 +2071,21 @@ document.getElementById("fill").addEventListener("click", async () => {
     msg.classList.add("text-error");
     return;
   }
+  
+  // TTS 音频合成现在在 content.js 中异步进行，填充时会自动合成
+  const needsTtsCount = questions.filter(q => {
+    const hasScript = (q.listening_script || "").trim().length > 0;
+    const hasAudio = (q.audio_url || "").trim().length > 0 || (q.audio_base64 || "").length > 0;
+    return hasScript && !hasAudio;
+  }).length;
+  
+  if (needsTtsCount > 0) {
+    console.log(`[TTS] 高级面板：有 ${needsTtsCount} 题需要合成音频，将在填充时异步进行`);
+  }
+  
   const sel = await getSelectorsForJsonPanel(tab.id);
-  const { defaultAudioUrl: dau, defaultImageUrl: diu } = await chrome.storage.sync.get(["defaultAudioUrl", "defaultImageUrl"]);
+  const { defaultAudioUrl: dau, defaultImageUrl: diu, ttsFemaleVoice, ttsMaleVoice, ttsFemaleSpeed, ttsMaleSpeed, ttsFemaleVolume, ttsMaleVolume } = 
+    await chrome.storage.sync.get(["defaultAudioUrl", "defaultImageUrl", "ttsFemaleVoice", "ttsMaleVoice", "ttsFemaleSpeed", "ttsMaleSpeed", "ttsFemaleVolume", "ttsMaleVolume"]);
   try {
     await chrome.tabs.sendMessage(tab.id, {
       type: "FILL_FORM",
@@ -1789,6 +2093,14 @@ document.getElementById("fill").addEventListener("click", async () => {
       selectors: sel,
       defaultAudioUrl: (dau || "").trim() || undefined,
       defaultImageUrl: (diu || "").trim() || undefined,
+      ttsSettings: {
+        femaleVoice: ttsFemaleVoice || "en_female_amanda_mars_bigtts",
+        maleVoice: ttsMaleVoice || "zh_male_jieshuonansheng_mars_bigtts",
+        femaleSpeed: parseFloat(ttsFemaleSpeed) || 0.85,
+        maleSpeed: parseFloat(ttsMaleSpeed) || 0.85,
+        femaleVolume: parseFloat(ttsFemaleVolume) || 1.0,
+        maleVolume: parseFloat(ttsMaleVolume) || 1.0,
+      },
       debugSource: "json",
     });
     pushJsonHistory(ta.value.trim()).catch(() => {});

@@ -72,11 +72,103 @@
       <!-- 默认媒体 URL -->
       <div class="settings-section">
         <div class="settings-section-title">默认媒体 URL</div>
-        <input id="defaultAudioUrl" type="text" class="settings-input" placeholder="音频 mp3 地址" />
-        <input id="defaultImageUrl" type="text" class="settings-input" placeholder="图片 jpg/png 地址" style="margin-top:6px;" />
+        <input id="defaultAudioUrl" type="text" class="settings-input" placeholder="音频 mp3 地址" value="111.mp3" />
+        <input id="defaultImageUrl" type="text" class="settings-input" placeholder="图片 jpg/png 地址" style="margin-top:6px;" value="222.png" />
+      </div>
+
+      <div class="settings-divider"></div>
+
+      <!-- TTS 语音合成设置 -->
+      <div class="settings-section">
+        <div class="settings-section-header">
+          <span class="settings-section-title">🎵 语音合成 (TTS)</span>
+          <button type="button" class="settings-reset-btn" id="ttsResetDefaults" title="重置为默认值">重置</button>
+        </div>
+        <div class="settings-hint">提示：moon系列支持语速/音量调节；mars/uranus系列语速无效</div>
+
+        <!-- 女声设置 -->
+        <div class="settings-subsection">
+          <div class="settings-subsection-header">
+            <span class="settings-subsection-title">👩 女声 (W:/Q:)</span>
+            <button type="button" class="settings-test-btn" id="ttsTestFemale" title="试听女声">试听</button>
+          </div>
+          <div class="settings-row">
+            <label class="settings-label">音色</label>
+            <select id="ttsFemaleVoice" class="settings-select-sm">
+              <option value="en_female_amanda_mars_bigtts">Amanda 英文 (默认)</option>
+              <option value="zh_female_wanwanxiaohe_moon_bigtts">婉婉小何 中文</option>
+              <option value="zh_female_tianmeixiaoyuan_moon_bigtts">甜美小媛 中文</option>
+              <option value="zh_female_qingcheyouni_moon_bigtts">清澈优妮 中文</option>
+            </select>
+          </div>
+          <div class="settings-row">
+            <label class="settings-label">语速</label>
+            <input type="number" id="ttsFemaleSpeed" min="0.5" max="2.0" step="0.05" value="0.85" class="settings-input-sm" />
+            <span class="settings-unit">x</span>
+          </div>
+          <div class="settings-row">
+            <label class="settings-label">音量</label>
+            <input type="number" id="ttsFemaleVolume" min="0.1" max="2.0" step="0.1" value="1.0" class="settings-input-sm" />
+            <span class="settings-unit">x</span>
+          </div>
+        </div>
+        
+        <!-- 男声设置 -->
+        <div class="settings-subsection">
+          <div class="settings-subsection-header">
+            <span class="settings-subsection-title">👨 男声 (M:/A:)</span>
+            <button type="button" class="settings-test-btn" id="ttsTestMale" title="试听男声">试听</button>
+          </div>
+          <div class="settings-row">
+            <label class="settings-label">音色</label>
+            <select id="ttsMaleVoice" class="settings-select-sm">
+              <option value="zh_male_jieshuonansheng_mars_bigtts">Morgan 解说 (默认)</option>
+              <option value="en_male_tim_uranus_bigtts">Tim 英文</option>
+              <option value="zh_male_wennuanahu_moon_bigtts">温暖阿虎 中文</option>
+              <option value="zh_male_chunhoukuanye_moon_bigtts">淳厚旷野 中文</option>
+              <option value="zh_male_yangguangqingnian_moon_bigtts">阳光青年 中文</option>
+            </select>
+          </div>
+          <div class="settings-row">
+            <label class="settings-label">语速</label>
+            <input type="number" id="ttsMaleSpeed" min="0.5" max="2.0" step="0.05" value="0.85" class="settings-input-sm" />
+            <span class="settings-unit">x</span>
+          </div>
+          <div class="settings-row">
+            <label class="settings-label">音量</label>
+            <input type="number" id="ttsMaleVolume" min="0.1" max="2.0" step="0.1" value="1.0" class="settings-input-sm" />
+            <span class="settings-unit">x</span>
+          </div>
+        </div>
       </div>
     </div>
   </header>
+  
+  <!-- TTS 试听弹窗 -->
+  <div id="ttsTestModal" class="modal hidden">
+    <div class="modal-backdrop"></div>
+    <div class="modal-content">
+      <div class="modal-header">
+        <span class="modal-title" id="ttsTestModalTitle">试听语音</span>
+        <button type="button" class="modal-close" id="ttsTestModalClose">&times;</button>
+      </div>
+      <div class="modal-body">
+        <textarea id="ttsTestText" class="modal-textarea" placeholder="输入要合成的文本..." rows="4">Hello, this is a test. The quick brown fox jumps over the lazy dog.</textarea>
+        <div class="modal-info" id="ttsTestInfo"></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" id="ttsTestPlay">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+          试听
+        </button>
+        <button type="button" class="btn btn-secondary" id="ttsTestDownload">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          下载
+        </button>
+        <button type="button" class="btn btn-primary" id="ttsTestModalOk">确定</button>
+      </div>
+    </div>
+  </div>
 
   <main>
     <!-- State: Not Detected -->

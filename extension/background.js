@@ -286,6 +286,128 @@ function normalizeAnswers(q) {
   return q2;
 }
 
+// ── TTS 音频合成 ─────────────────────────────────────────────────────────────
+
+/**
+ * 检查题目是否需要 TTS 合成：有 listening_script 但无 audio_url / audio_base64
+ */
+function needsTts(q) {
+  const hasScript = (q.listening_script || "").trim().length > 0;
+  const hasAudio = (q.audio_url || "").trim().length > 0 || (q.audio_base64 || "").length > 0;
+  return hasScript && !hasAudio;
+}
+
+/**
+ * 检查 blank 是否需要 TTS 合成
+ */
+function blankNeedsTts(blank) {
+  const hasScript = (blank.listening_script || blank.script || "").trim().length > 0;
+  const hasAudio = (blank.audio_url || "").trim().length > 0 || (blank.audio_base64 || "").length > 0;
+  return hasScript && !hasAudio;
+}
+
+/**
+ * 调用后端 /api/tts 合成音频
+ * @param {string} text - 要合成的文本
+ * @param {boolean} dialogue - 是否为对话模式（自动识别 W:/M:/Q:/A: 标记）
+ * @param {AbortSignal} signal - 用于取消请求
+ * @returns {Promise<string|null>} - base64 音频或 null
+ */
+async function callTtsApi(text, dialogue, signal) {
+  try {
+    const resp = await fetch(BACKEND + "/api/tts", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        text,
+        dialogue,
+        format: "mp3",
+        sample_rate: 24000,
+        speed_ratio: 1.0,
+      }),
+      signal,
+    });
+    if (!resp.ok) {
+      console.warn("[TTS] API 返回错误:", resp.status);
+      return null;
+    }
+    const data = await resp.json();
+    return data.audioBase64 || null;
+  } catch (e) {
+    if (e.name === "AbortError") throw e;
+    console.warn("[TTS] 合成失败:", e.message);
+    return null;
+  }
+}
+
+/**
+ * 为题目列表中需要 TTS 的题目合成音频
+ * @param {Array} questions - 题目列表
+ * @param {AbortSignal} signal - 用于取消请求
+ * @returns {Promise<Array>} - 带有 audio_base64 的题目列表
+ */
+async function synthesizeTtsForQuestions(questions, signal) {
+  console.log("[TTS] synthesizeTtsForQuestions 被调用，题目数:", questions.length);
+  
+  // 收集需要合成的任务：{ qIdx, blankIdx?, script }
+  const tasks = [];
+  for (let qIdx = 0; qIdx < questions.length; qIdx++) {
+    const q = questions[qIdx];
+    const hasScript = (q.listening_script || "").trim().length > 0;
+    const hasAudio = (q.audio_url || "").trim().length > 0 || (q.audio_base64 || "").length > 0;
+    console.log(`[TTS] 题目 ${qIdx + 1}: hasScript=${hasScript}, hasAudio=${hasAudio}, listening_script前50字="${(q.listening_script || "").slice(0, 50)}"`);
+    
+    // 顶层 listening_script
+    if (needsTts(q)) {
+      tasks.push({ qIdx, blankIdx: null, script: q.listening_script.trim() });
+    }
+    // blanks 内的 listening_script
+    if (Array.isArray(q.blanks)) {
+      for (let bIdx = 0; bIdx < q.blanks.length; bIdx++) {
+        const blank = q.blanks[bIdx];
+        if (blankNeedsTts(blank)) {
+          const script = (blank.listening_script || blank.script || "").trim();
+          tasks.push({ qIdx, blankIdx: bIdx, script });
+        }
+      }
+    }
+  }
+
+  if (tasks.length === 0) {
+    console.log("[TTS] 无需合成音频的题目（所有题目都已有音频或无听力原文）");
+    return questions;
+  }
+
+  console.log(`[TTS] 需要合成 ${tasks.length} 段音频`);
+  broadcastToPopup({ type: "TTS_PROGRESS", current: 0, total: tasks.length, text: `正在合成音频 (0/${tasks.length})…` });
+
+  // 逐个合成（避免并发过多导致超时）
+  for (let i = 0; i < tasks.length; i++) {
+    if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
+
+    const task = tasks[i];
+    broadcastToPopup({ type: "TTS_PROGRESS", current: i + 1, total: tasks.length, text: `正在合成音频 (${i + 1}/${tasks.length})…` });
+
+    // 判断是否为对话（含 W:/M:/Q:/A: 标记）
+    const isDialogue = /^[WwMmQqAa][：:]/m.test(task.script);
+    const audioBase64 = await callTtsApi(task.script, isDialogue, signal);
+
+    if (audioBase64) {
+      if (task.blankIdx === null) {
+        questions[task.qIdx].audio_base64 = audioBase64;
+      } else {
+        questions[task.qIdx].blanks[task.blankIdx].audio_base64 = audioBase64;
+      }
+      console.log(`[TTS] 题目 ${task.qIdx + 1}${task.blankIdx !== null ? ` 小题 ${task.blankIdx + 1}` : ""} 合成成功`);
+    } else {
+      console.warn(`[TTS] 题目 ${task.qIdx + 1}${task.blankIdx !== null ? ` 小题 ${task.blankIdx + 1}` : ""} 合成失败`);
+    }
+  }
+
+  broadcastToPopup({ type: "TTS_PROGRESS", current: tasks.length, total: tasks.length, text: `音频合成完成` });
+  return questions;
+}
+
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === "START_PARSE") {
     parseTabId = msg.tabId || sender.tab?.id || null;
@@ -331,6 +453,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     if (msg.tabId) updateBadgeForRecordTab(msg.tabId, "parse_idle");
     sendResponse({ ok: true });
     return false;
+  }
+
+  // SYNTHESIZE_TTS 已废弃，TTS 现在在 content.js 填充时异步进行
+  if (msg.type === "SYNTHESIZE_TTS") {
+    console.log("[TTS] SYNTHESIZE_TTS 已废弃，TTS 现在在 content.js 填充时异步进行");
+    sendResponse({ ok: true, questions: msg.questions || [] });
+    return true;
   }
 });
 
@@ -438,6 +567,8 @@ async function handleParse(filesData) {
       broadcastToPopup({ type: "PARSE_ERROR", text: errText });
       return;
     }
+
+    // TTS 音频合成现在在 content.js 填充时异步进行，不再在解析后阻塞合成
 
     const doneText = `豆包识别完成，共 ${questions.length} 题。`;
     await setState({ status: "done", questions, debug_info, text: doneText });

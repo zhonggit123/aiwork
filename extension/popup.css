@@ -141,14 +141,30 @@ header {
   position: absolute;
   top: 50px;
   right: 12px;
-  width: 220px;
+  width: 250px;
+  max-height: 420px;
   background: #fff;
   border: 1px solid var(--gray-200);
   border-radius: 10px;
   box-shadow: 0 8px 24px rgba(0,0,0,0.12);
   z-index: 200;
-  overflow: hidden;
+  overflow-y: auto;
+  overflow-x: hidden;
   animation: dropdownIn 0.15s ease;
+}
+
+.settings-dropdown::-webkit-scrollbar {
+  width: 6px;
+}
+.settings-dropdown::-webkit-scrollbar-track {
+  background: transparent;
+}
+.settings-dropdown::-webkit-scrollbar-thumb {
+  background: var(--gray-300);
+  border-radius: 3px;
+}
+.settings-dropdown::-webkit-scrollbar-thumb:hover {
+  background: var(--gray-400);
 }
 
 @keyframes dropdownIn {
@@ -160,13 +176,43 @@ header {
   padding: 10px 14px;
 }
 
+.settings-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
 .settings-section-title {
   font-size: 11px;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: var(--gray-400);
+}
+
+.settings-reset-btn {
+  font-size: 10px;
+  padding: 2px 8px;
+  border: 1px solid var(--gray-200);
+  border-radius: 4px;
+  background: var(--gray-50);
+  color: var(--gray-500);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.settings-reset-btn:hover {
+  background: var(--gray-100);
+  color: var(--gray-700);
+  border-color: var(--gray-300);
+}
+
+.settings-hint {
+  font-size: 10px;
+  color: var(--gray-400);
   margin-bottom: 8px;
+  padding: 4px 0;
 }
 
 .settings-divider {
@@ -261,6 +307,230 @@ header {
   font-size: 11px;
   color: var(--gray-500);
   margin-top: 4px;
+}
+
+/* TTS 设置样式 */
+.settings-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.settings-label {
+  font-size: 12px;
+  color: var(--gray-600);
+  min-width: 60px;
+  flex-shrink: 0;
+}
+.settings-select-sm {
+  flex: 1;
+  font-size: 11px;
+  padding: 4px 6px;
+  border: 1px solid var(--gray-200);
+  border-radius: 5px;
+  color: var(--gray-700);
+  outline: none;
+  background: #fff;
+}
+.settings-select-sm:focus {
+  border-color: var(--gray-400);
+}
+.settings-range {
+  flex: 1;
+  height: 4px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: var(--gray-200);
+  border-radius: 2px;
+  outline: none;
+}
+.settings-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  background: var(--brand-green);
+  border-radius: 50%;
+  cursor: pointer;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+}
+.settings-range::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  background: var(--brand-green);
+  border-radius: 50%;
+  cursor: pointer;
+  border: none;
+}
+.settings-range-val {
+  font-size: 11px;
+  color: var(--gray-500);
+  min-width: 32px;
+  text-align: right;
+}
+
+/* TTS 设置子区块 */
+.settings-subsection {
+  background: var(--gray-50);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-bottom: 10px;
+}
+.settings-subsection-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.settings-subsection-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--gray-700);
+}
+.settings-test-btn {
+  font-size: 11px;
+  padding: 3px 10px;
+  border: 1px solid var(--brand-green);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--brand-green);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.settings-test-btn:hover {
+  background: var(--brand-green);
+  color: #fff;
+}
+.settings-input-sm {
+  width: 60px;
+  font-size: 12px;
+  padding: 4px 6px;
+  border: 1px solid var(--gray-200);
+  border-radius: 5px;
+  color: var(--gray-700);
+  outline: none;
+  text-align: center;
+}
+.settings-input-sm:focus {
+  border-color: var(--brand-green);
+}
+.settings-unit {
+  font-size: 11px;
+  color: var(--gray-500);
+  margin-left: 2px;
+}
+
+/* TTS 试听弹窗 */
+.modal {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.modal.hidden {
+  display: none;
+}
+.modal-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+}
+.modal-content {
+  position: relative;
+  background: #fff;
+  border-radius: 12px;
+  width: 320px;
+  max-width: 90%;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+  animation: modalSlideIn 0.2s ease-out;
+}
+@keyframes modalSlideIn {
+  from { transform: translateY(-20px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--gray-100);
+}
+.modal-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--gray-800);
+}
+.modal-close {
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: transparent;
+  font-size: 18px;
+  color: var(--gray-400);
+  cursor: pointer;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.modal-close:hover {
+  background: var(--gray-100);
+  color: var(--gray-600);
+}
+.modal-body {
+  padding: 16px;
+}
+.modal-textarea {
+  width: 100%;
+  font-size: 13px;
+  padding: 10px;
+  border: 1px solid var(--gray-200);
+  border-radius: 8px;
+  resize: vertical;
+  outline: none;
+  font-family: inherit;
+  line-height: 1.5;
+}
+.modal-textarea:focus {
+  border-color: var(--brand-green);
+}
+.modal-info {
+  margin-top: 10px;
+  font-size: 11px;
+  color: var(--gray-500);
+  min-height: 16px;
+}
+.modal-info.loading {
+  color: var(--brand-green);
+}
+.modal-info.error {
+  color: var(--error);
+}
+.modal-footer {
+  display: flex;
+  gap: 8px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--gray-100);
+  justify-content: flex-end;
+}
+.modal-footer .btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 12px;
+  font-size: 12px;
+}
+.btn-secondary {
+  background: var(--gray-100);
+  color: var(--gray-700);
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.btn-secondary:hover {
+  background: var(--gray-200);
 }
 
 .settings-nav-item {

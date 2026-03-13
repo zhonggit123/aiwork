@@ -196,6 +196,247 @@ class SubmitBody(BaseModel):
     questions: list  # list of {type, question, options, answer, explanation}
 
 
+class TtsRequest(BaseModel):
+    """TTS 合成请求体。"""
+    text: str
+    speaker: str | None = None
+    format: str = "mp3"
+    sample_rate: int = 24000
+    speed_ratio: float = 1.0
+    volume_ratio: float = 1.0  # 音量倍率
+    dialogue: bool = False  # True 时自动解析 W:/M:/Q:/A: 标记，分配男女声
+    # 对话模式下的音色、语速、音量设置
+    female_speaker: str | None = None
+    male_speaker: str | None = None
+    female_speed: float | None = None
+    male_speed: float | None = None
+    female_volume: float | None = None
+    male_volume: float | None = None
+
+
+# ── TTS 合成 ──────────────────────────────────────────────────────────────────
+import re
+import base64
+import httpx
+
+
+def _parse_dialogue_lines(text: str) -> list[dict]:
+    """解析对话文本，返回 [{ "speaker": "male"|"female", "text": "..." }, ...]。
+    
+    规则：
+    - W: / W： / Q: / Q： 开头 -> female
+    - M: / M： / A: / A： 开头 -> male
+    - 无标记行 -> male (默认)
+    - 连续同性别行合并为一段
+    """
+    lines = text.strip().split("\n")
+    segments: list[dict] = []
+    
+    female_pattern = re.compile(r"^[WwQq][：:]\s*")
+    male_pattern = re.compile(r"^[MmAa][：:]\s*")
+    
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+        
+        if female_pattern.match(line):
+            speaker = "female"
+            content = female_pattern.sub("", line).strip()
+        elif male_pattern.match(line):
+            speaker = "male"
+            content = male_pattern.sub("", line).strip()
+        else:
+            speaker = "male"
+            content = line
+        
+        if not content:
+            continue
+        
+        # 合并连续同性别段落
+        if segments and segments[-1]["speaker"] == speaker:
+            segments[-1]["text"] += " " + content
+        else:
+            segments.append({"speaker": speaker, "text": content})
+    
+    return segments
+
+
+async def _synthesize_single(
+    text: str,
+    speaker: str,
+    format: str,
+    sample_rate: int,
+    speed_ratio: float,
+    volume_ratio: float,
+    access_key: str,
+    app_id: str | None,
+) -> bytes:
+    """调用火山引擎 TTS v3 合成单段音频，返回原始音频字节。"""
+    # 根据 speaker 名称选择 resource_id
+    # uranus 系列用 seed-tts-2.0，其他（moon/mars）用 seed-tts-1.0
+    if "_uranus_" in speaker:
+        resource_id = "seed-tts-2.0"
+    else:
+        resource_id = "seed-tts-1.0"
+    
+    url = "https://openspeech.bytedance.com/api/v3/tts/unidirectional"
+    
+    request_body = {
+        "user": {"uid": "ai_luti_tts"},
+        "req_params": {
+            "text": text.strip(),
+            "speaker": speaker,
+            "speed_ratio": speed_ratio,
+            "loudness_ratio": volume_ratio,  # 豆包 TTS 使用 loudness_ratio 而非 volume_ratio
+            "additions": '{"disable_markdown_filter":true,"enable_language_detector":true}',
+            "audio_params": {
+                "format": format,
+                "sample_rate": sample_rate,
+            },
+        },
+    }
+    
+    headers = {
+        "Content-Type": "application/json",
+        "X-Api-Key": access_key,
+        "X-Api-Resource-Id": resource_id,
+    }
+    if app_id:
+        headers["X-Api-App-Id"] = app_id
+    
+    print(f"[TTS] 请求: speaker={speaker}, resource_id={resource_id}, text={text[:80]}...")
+    print(f"[TTS] Headers: X-Api-Resource-Id={resource_id}, X-Api-App-Id={app_id}")
+    
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        resp = await client.post(url, json=request_body, headers=headers)
+        print(f"[TTS] 响应状态: {resp.status_code}")
+        
+        # 火山引擎返回流式 JSON，每行一个 JSON 对象
+        raw_text = resp.text
+        print(f"[TTS] 响应长度: {len(raw_text)} 字符")
+        
+        # 打印前 500 字符用于调试
+        if len(raw_text) < 1000:
+            print(f"[TTS] 响应内容: {raw_text}")
+        else:
+            print(f"[TTS] 响应前500字符: {raw_text[:500]}")
+        
+        resp.raise_for_status()
+        
+        audio_parts: list[bytes] = []
+        
+        for line in raw_text.split("\n"):
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                import json as json_module
+                obj = json_module.loads(line)
+                # 音频数据可能在 data / data.audio / audio 字段
+                audio_b64 = None
+                if isinstance(obj.get("data"), dict):
+                    audio_b64 = obj["data"].get("audio")
+                elif isinstance(obj.get("data"), str):
+                    audio_b64 = obj["data"]
+                elif obj.get("audio"):
+                    audio_b64 = obj["audio"]
+                
+                if audio_b64:
+                    audio_parts.append(base64.b64decode(audio_b64))
+            except Exception as e:
+                print(f"[TTS] 解析行失败: {e}, line={line[:100]}")
+                continue
+        
+        print(f"[TTS] 解析到 {len(audio_parts)} 个音频片段")
+        return b"".join(audio_parts)
+
+
+@app.post("/api/tts")
+async def synthesize_tts(req: TtsRequest):
+    """TTS 语音合成接口。
+    
+    支持两种模式：
+    1. 普通模式：直接合成 text，使用指定 speaker
+    2. 对话模式 (dialogue=True)：解析 W:/M:/Q:/A: 标记，自动分配男女声
+    """
+    config = get_config()
+    tts_cfg = config.get("tts", {})
+    
+    access_key = tts_cfg.get("access_key") or os.environ.get("DOUBAO_TTS_ACCESS_KEY", "")
+    app_id = tts_cfg.get("app_id") or os.environ.get("DOUBAO_TTS_APP_ID", "")
+    # 优先使用请求中的音色设置，否则使用配置文件中的默认值
+    male_speaker = req.male_speaker or tts_cfg.get("male_speaker", "zh_male_wennuanahu_moon_bigtts")
+    female_speaker = req.female_speaker or tts_cfg.get("female_speaker", "zh_female_wanwanxiaohe_moon_bigtts")
+    # 语速设置
+    male_speed = req.male_speed if req.male_speed is not None else req.speed_ratio
+    female_speed = req.female_speed if req.female_speed is not None else req.speed_ratio
+    # 音量设置
+    male_volume = req.male_volume if req.male_volume is not None else req.volume_ratio
+    female_volume = req.female_volume if req.female_volume is not None else req.volume_ratio
+    
+    if not access_key:
+        raise HTTPException(500, "TTS access_key 未配置，请在 config.yaml 的 tts.access_key 中填写")
+    
+    text = (req.text or "").strip()
+    if not text:
+        raise HTTPException(400, "text 不能为空")
+    
+    try:
+        if req.dialogue:
+            # 对话模式：解析标记，分段合成，拼接
+            segments = _parse_dialogue_lines(text)
+            if not segments:
+                raise HTTPException(400, "对话文本解析后为空")
+            
+            audio_parts: list[bytes] = []
+            for seg in segments:
+                spk = female_speaker if seg["speaker"] == "female" else male_speaker
+                spd = female_speed if seg["speaker"] == "female" else male_speed
+                vol = female_volume if seg["speaker"] == "female" else male_volume
+                part = await _synthesize_single(
+                    seg["text"],
+                    spk,
+                    req.format,
+                    req.sample_rate,
+                    spd,
+                    vol,
+                    access_key,
+                    app_id,
+                )
+                audio_parts.append(part)
+            
+            combined = b"".join(audio_parts)
+        else:
+            # 普通模式：使用指定音色或默认女声
+            speaker = req.speaker or female_speaker
+            speed = female_speed
+            volume = female_volume
+            combined = await _synthesize_single(
+                text,
+                speaker,
+                req.format,
+                req.sample_rate,
+                speed,
+                volume,
+                access_key,
+                app_id,
+            )
+        
+        if not combined:
+            raise HTTPException(500, "TTS 合成返回空音频")
+        
+        return {
+            "audioBase64": base64.b64encode(combined).decode("utf-8"),
+            "format": req.format,
+        }
+    
+    except httpx.HTTPStatusError as e:
+        raise HTTPException(e.response.status_code, f"TTS API 错误: {e.response.text[:200]}")
+    except Exception as e:
+        raise HTTPException(500, f"TTS 合成失败: {str(e)}")
+
+
 class DebugPageHtmlBody(BaseModel):
     """插件一键保存当前题 HTML 到项目，供 AI 读取真实 DOM 优化识别。"""
     html: str
