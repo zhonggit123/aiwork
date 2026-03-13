@@ -23,7 +23,7 @@ from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from word_reader import read_word_text, chunk_text, extract_word_images
+from word_reader import read_word_text, chunk_text, extract_word_images, extract_word_tables_as_images
 from llm_extract import (
     extract_questions_from_word_chunks_async,
     classify_file_fast,
@@ -217,20 +217,21 @@ async def _read_word_content(content: bytes) -> str:
 
 
 async def _read_word_content_with_images(content: bytes) -> tuple:
-    """读取 Word 文件内容（文字 + 图片），异步，返回 (text, extracted_images)。"""
+    """读取 Word 文件内容（文字 + 图片 + 表格图片），异步，返回 (text, extracted_images, table_images)。"""
     import asyncio
 
     with tempfile.NamedTemporaryFile(suffix=".docx", delete=False) as fp:
         fp.write(content)
         tmp = fp.name
     try:
-        text, images = await asyncio.gather(
+        text, images, tables = await asyncio.gather(
             asyncio.to_thread(read_word_text, tmp),
             asyncio.to_thread(extract_word_images, tmp),
+            asyncio.to_thread(extract_word_tables_as_images, tmp),
         )
     finally:
         Path(tmp).unlink(missing_ok=True)
-    return text, images
+    return text, images, tables
 
 
 async def _parse_one_file(
@@ -379,8 +380,10 @@ async def parse_word_multiple(
     # 生成本次解析的图片会话 ID，保存提取到的图片到临时目录
     session_id = str(uuid.uuid4())
     all_extracted_images: list = []
-    for _text, _imgs in text_and_images:
+    all_table_images: list = []
+    for _text, _imgs, _tables in text_and_images:
         all_extracted_images.extend(_imgs)
+        all_table_images.extend(_tables)
     if all_extracted_images:
         saved_images = _save_option_images(all_extracted_images, session_id)
         _register_image_session(session_id)
@@ -388,13 +391,29 @@ async def parse_word_multiple(
     else:
         saved_images = []
 
+    # 保存表格图片
+    saved_table_images: list = []
+    if all_table_images:
+        session_dir = _get_image_session_dir(session_id)
+        _register_image_session(session_id)
+        for tbl in all_table_images:
+            filename = f"table_{tbl['table_index']:04d}.{tbl['image_ext']}"
+            dest = session_dir / filename
+            dest.write_bytes(tbl["image_bytes"])
+            saved_table_images.append({
+                "table_index": tbl["table_index"],
+                "filename": filename,
+                "first_cell": tbl.get("first_cell", ""),
+            })
+        print(f"[parse-multiple] 从 Word 提取表格图片 {len(all_table_images)} 张")
+
     # 推断本地服务器 base_url（供图片 URL 拼接）
     _port = 8766
     _image_base_url = f"http://localhost:{_port}"
 
     files_data = []
     for i in range(len(valid)):
-        text_i, _ = text_and_images[i]
+        text_i, _, _ = text_and_images[i]
         # 快速识别文件类型（不调 LLM）
         file_info = classify_file_fast(filenames[i], text_i)
         files_data.append({
@@ -518,14 +537,16 @@ async def parse_word_multiple(
 
         print(f"[parse-multiple] 解析完成，共 {len(questions)} 题")
 
+        # 解析页面结构（用于图片注入）
+        parsed_slots = None
+        if page_structure and page_structure.strip():
+            try:
+                parsed_slots = json_module.loads(page_structure)
+            except Exception:
+                parsed_slots = None
+
         # ── 图片选项注入 ──────────────────────────────────────────────────────
-        if saved_images:
-            parsed_slots = None
-            if page_structure and page_structure.strip():
-                try:
-                    parsed_slots = json_module.loads(page_structure)
-                except Exception:
-                    parsed_slots = None
+        if saved_images and parsed_slots:
             questions = _enrich_questions_with_option_images(
                 questions,
                 saved_images,
@@ -539,6 +560,32 @@ async def parse_word_multiple(
                 if isinstance(opt, str) and opt.startswith(_image_base_url)
             )
             print(f"[parse-multiple] 图片选项注入完成，共替换 {injected} 个选项")
+
+        # ── 表格图片注入（题干图片）──────────────────────────────────────────────
+        if saved_table_images:
+            # 策略：将表格图片分配给录题页结构中有 image_url 字段的题目
+            tbl_ptr = 0
+            for q_idx, q in enumerate(questions):
+                if tbl_ptr >= len(saved_table_images):
+                    break
+                # 检查该题对应的 slot 是否有 image_url 字段
+                slot_idx = q_idx
+                slot_has_image = False
+                if parsed_slots and slot_idx < len(parsed_slots):
+                    slot = parsed_slots[slot_idx]
+                    slot_fields = slot.get("currentSlotFields", [])
+                    slot_has_image = any(
+                        f.get("role") == "image_url" or f == "image_url"
+                        for f in slot_fields
+                    ) if isinstance(slot_fields, list) else "image_url" in str(slot_fields)
+                
+                # 如果该题的录题页有图片字段，且题目没有 image_url，则注入
+                existing_img = (q.get("image_url") or "").strip()
+                if slot_has_image and not existing_img:
+                    tbl_info = saved_table_images[tbl_ptr]
+                    q["image_url"] = f"{_image_base_url}/api/images/{session_id}/{tbl_info['filename']}"
+                    print(f"[parse-multiple] 题目 {q_idx+1} 注入表格图片: {tbl_info['filename']} (slot有image_url字段)")
+                    tbl_ptr += 1
 
         result = {"questions": questions}
         if debug_info is not None:

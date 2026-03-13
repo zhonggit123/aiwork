@@ -2375,8 +2375,10 @@ async function runFill(questions, selectors, defaultAudioUrl, defaultImageUrl, d
 
     // ── 图片填充 ──────────────────────────────────────────────────────────
     // 若 JSON 未提供 image_url，用 defaultImageUrl 兜底
-    const imageUrlVal = (q.image_url || "").toString().trim() || (defaultImageUrl || "").toString().trim();
+    const rawImageUrl = (q.image_url || "").toString().trim();
+    const imageUrlVal = rawImageUrl || (defaultImageUrl || "").toString().trim();
     const hasImageBase64 = !!q.image_base64;
+    const isLocalImageUrl = rawImageUrl.startsWith("http://localhost") && rawImageUrl.includes("/api/images/");
     let imageFileSels = qSel(curSel, "image_file");
     let imageUrlSels = qSel(curSel, "image_url");
     
@@ -2397,9 +2399,111 @@ async function runFill(questions, selectors, defaultAudioUrl, defaultImageUrl, d
       }
     }
     
-    log(`图片填充: imageUrlVal=${imageUrlVal ? imageUrlVal.slice(0, 50) + "..." : "(空)"} hasBase64=${hasImageBase64} image_file选择器=${imageFileSels.length} image_url选择器=${imageUrlSels.length}`);
+    log(`图片填充: imageUrlVal=${imageUrlVal ? imageUrlVal.slice(0, 50) + "..." : "(空)"} isLocalUrl=${isLocalImageUrl} hasBase64=${hasImageBase64} image_file选择器=${imageFileSels.length} image_url选择器=${imageUrlSels.length}`);
     
-    if (imageUrlVal || hasImageBase64) {
+    // ── 题干图片上传（localhost URL 需要通过 uploadify 上传）──
+    if (isLocalImageUrl) {
+      log(`  检测到本地题干图片URL，尝试uploadify上传: ${rawImageUrl.slice(0, 60)}`);
+      // 找到题干图片的 uploadify 上传框
+      let stemFileInputSel = imageFileSels[0] || null;
+      // 如果没找到，尝试从 imageFileName 输入框推断
+      if (!stemFileInputSel && imageUrlSels.length > 0) {
+        const textEl = document.querySelector(imageUrlSels[0]);
+        if (textEl && textEl.id) {
+          // 模式：imageFileName → image_upload > input[type=file]
+          const uploadContainer = document.getElementById("image_upload");
+          if (uploadContainer) {
+            const fi = uploadContainer.querySelector("input[type='file']");
+            if (fi) stemFileInputSel = fi.id ? `#${fi.id}` : "#image_upload input[type='file']";
+          }
+        }
+      }
+      // 再尝试通用查找
+      if (!stemFileInputSel) {
+        const scope = document.querySelector(".topic-container, #topic-section, #right-container") || document.body;
+        const uploadContainer = scope.querySelector("[id='image_upload'], [id*='imageUpload'], .image-upload-wrap");
+        if (uploadContainer) {
+          const fi = uploadContainer.querySelector("input[type='file']");
+          if (fi) stemFileInputSel = fi.id ? `#${fi.id}` : null;
+        }
+      }
+      log(`  题干图片上传框: ${stemFileInputSel || "未找到"}`);
+      
+      if (stemFileInputSel) {
+        try {
+          const res = await fetch(rawImageUrl);
+          if (!res.ok) { log(`  题干图片fetch失败: ${res.status}`); }
+          else {
+            const blob = await res.blob();
+            const ext = (blob.type || "image/jpeg").split("/")[1] || "jpg";
+            const file = new File([blob], `stem_image.${ext}`, { type: blob.type || "image/jpeg" });
+            log(`  题干图片File创建: name=${file.name} size=${file.size} type=${file.type}`);
+            
+            const fileEl = document.querySelector(stemFileInputSel);
+            if (fileEl) {
+              let uploaded = false;
+              const $ = window.jQuery || window.$;
+              if ($ && typeof $.fn.uploadify === "function") {
+                try {
+                  const settings = $(fileEl).data("uploadify") || $(fileEl).closest("[class*='uploadify'],[id*='upload']").data("uploadify");
+                  if (settings) {
+                    log(`  题干图片找到uploadify settings，尝试直接上传`);
+                    const xhr = new XMLHttpRequest();
+                    const fd = new FormData();
+                    const fileFieldName = settings.fileObjName || settings.fileField || "Filedata";
+                    fd.append(fileFieldName, file);
+                    if (settings.formData) {
+                      Object.entries(settings.formData).forEach(([k, v]) => fd.append(k, v));
+                    }
+                    const uploadUrl = settings.uploader || settings.uploadScript;
+                    if (uploadUrl) {
+                      await new Promise((resolve) => {
+                        xhr.open("POST", uploadUrl);
+                        xhr.withCredentials = true;
+                        xhr.onload = () => {
+                          log(`  题干图片uploadify直传 => ${xhr.status} ${xhr.responseText.slice(0, 100)}`);
+                          try {
+                            const resp = JSON.parse(xhr.responseText);
+                            const fname = resp.file_path || resp.fileName || resp.filename || resp.name || resp.url || "";
+                            if (fname && imageUrlSels.length > 0) {
+                              const targetEl = document.querySelector(imageUrlSels[0]);
+                              if (targetEl) {
+                                const nativeDesc = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value");
+                                if (nativeDesc && nativeDesc.set) {
+                                  nativeDesc.set.call(targetEl, fname);
+                                  targetEl.dispatchEvent(new Event("input", { bubbles: true }));
+                                  targetEl.dispatchEvent(new Event("change", { bubbles: true }));
+                                  log(`  题干图片imageFileName已更新: ${fname}`);
+                                }
+                              }
+                            }
+                          } catch (_) {}
+                          resolve();
+                        };
+                        xhr.onerror = () => { log(`  题干图片uploadify直传网络错误`); resolve(); };
+                        xhr.send(fd);
+                      });
+                      uploaded = true;
+                      await delay(500);
+                    }
+                  }
+                } catch (e2) {
+                  log(`  题干图片uploadify直传异常: ${e2?.message}`);
+                }
+              }
+              if (!uploaded) {
+                const ok = fillFileField(stemFileInputSel, file);
+                log(`  题干图片fillFileField=${ok}`);
+                if (ok) await delay(1500);
+              }
+            }
+          }
+        } catch (e) {
+          log(`  题干图片上传异常: ${e?.message}`);
+        }
+      }
+    } else if (imageUrlVal || hasImageBase64) {
+      // 非 localhost URL，走原有逻辑
       const imageFile = await resolveMediaFile(q, "image", defaultImageUrl);
       log(`  resolveMediaFile => ${imageFile ? "File对象" : "null"}`);
       if (imageFile && imageFileSels.length > 0) {

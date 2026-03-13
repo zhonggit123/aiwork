@@ -801,8 +801,13 @@ async function getJsonHistory() {
   return Array.isArray(jsonHistory) ? jsonHistory : [];
 }
 async function pushJsonHistory(jsonText, debugInfo) {
-  if (!jsonText || typeof jsonText !== "string" || !jsonText.trim()) return;
+  console.log("[pushJsonHistory] 开始保存历史, jsonText长度:", jsonText?.length);
+  if (!jsonText || typeof jsonText !== "string" || !jsonText.trim()) {
+    console.log("[pushJsonHistory] jsonText 无效，跳过");
+    return;
+  }
   const list = await getJsonHistory();
+  console.log("[pushJsonHistory] 当前历史条数:", list.length);
   const trimmed = jsonText.trim();
   const next = {
     text: trimmed,
@@ -814,6 +819,7 @@ async function pushJsonHistory(jsonText, debugInfo) {
   const filtered = list.filter((item) => item.text !== trimmed);
   const nextList = [next, ...filtered].slice(0, JSON_HISTORY_MAX);
   await chrome.storage.local.set({ jsonHistory: nextList });
+  console.log("[pushJsonHistory] 保存完成，新历史条数:", nextList.length);
 }
 
 let _parsingDotsTimer = null;
