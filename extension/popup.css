@@ -50,6 +50,7 @@
 
 html {
   height: 100%;
+  width: 100%;
 }
 
 body {
@@ -69,11 +70,17 @@ body {
 }
 
 /* 侧边栏模式：当页面高度超过 popup 通常高度时，认为是侧边栏 */
-body.sidepanel-mode,
+html.sidepanel-mode,
 html.sidepanel-mode body {
-  width: 100%;
+  width: 100% !important;
   min-width: 280px;
-  max-width: 100%;
+  max-width: 100% !important;
+}
+
+body.sidepanel-mode {
+  width: 100% !important;
+  min-width: 280px;
+  max-width: 100% !important;
 }
 
 /* Header - Tab Style */
