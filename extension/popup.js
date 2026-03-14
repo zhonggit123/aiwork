@@ -604,6 +604,171 @@ restoreParseState();
     const byteArray = new Uint8Array(byteNumbers);
     return new Blob([byteArray], { type: mimeType });
   }
+
+  // ── TTS 自定义合成弹窗（支持对话模式）──────────────────────────
+  const ttsSynthModal = document.getElementById("ttsSynthModal");
+  const ttsSynthModalClose = document.getElementById("ttsSynthModalClose");
+  const ttsSynthModalCancel = document.getElementById("ttsSynthModalCancel");
+  const ttsSynthText = document.getElementById("ttsSynthText");
+  const ttsSynthInfo = document.getElementById("ttsSynthInfo");
+  const ttsSynthPlay = document.getElementById("ttsSynthPlay");
+  const ttsSynthDownload = document.getElementById("ttsSynthDownload");
+  const ttsSynthAudioWrap = document.getElementById("ttsSynthAudioWrap");
+  const ttsSynthAudio = document.getElementById("ttsSynthAudio");
+  const ttsSynthesizeBtn = document.getElementById("ttsSynthesizeBtn");
+
+  let synthAudioBase64 = null;
+
+  const openTtsSynthModal = () => {
+    synthAudioBase64 = null;
+    ttsSynthInfo.textContent = "";
+    ttsSynthInfo.className = "modal-info";
+    ttsSynthAudioWrap.classList.add("hidden");
+    ttsSynthDownload.disabled = true;
+    ttsSynthModal.classList.remove("hidden");
+  };
+
+  const closeTtsSynthModal = () => {
+    ttsSynthModal.classList.add("hidden");
+    if (ttsSynthAudio) {
+      ttsSynthAudio.pause();
+      ttsSynthAudio.src = "";
+    }
+  };
+
+  if (ttsSynthesizeBtn) ttsSynthesizeBtn.addEventListener("click", openTtsSynthModal);
+  if (ttsSynthModalClose) ttsSynthModalClose.addEventListener("click", closeTtsSynthModal);
+  if (ttsSynthModalCancel) ttsSynthModalCancel.addEventListener("click", closeTtsSynthModal);
+  if (ttsSynthModal) {
+    ttsSynthModal.querySelector(".modal-backdrop")?.addEventListener("click", closeTtsSynthModal);
+  }
+
+  // 合成按钮
+  if (ttsSynthPlay) {
+    ttsSynthPlay.addEventListener("click", async () => {
+      const text = ttsSynthText?.value?.trim();
+      if (!text) {
+        ttsSynthInfo.textContent = "请输入要合成的文本";
+        ttsSynthInfo.className = "modal-info error";
+        return;
+      }
+
+      // 获取当前 TTS 设置
+      const femaleVoice = ttsFemaleVoiceEl?.value || TTS_DEFAULTS.femaleVoice;
+      const maleVoice = ttsMaleVoiceEl?.value || TTS_DEFAULTS.maleVoice;
+      const femaleSpeed = parseFloat(ttsFemaleSpeedEl?.value || TTS_DEFAULTS.femaleSpeed);
+      const maleSpeed = parseFloat(ttsMaleSpeedEl?.value || TTS_DEFAULTS.maleSpeed);
+      const femaleVolume = parseFloat(ttsFemaleVolumeEl?.value || TTS_DEFAULTS.femaleVolume);
+      const maleVolume = parseFloat(ttsMaleVolumeEl?.value || TTS_DEFAULTS.maleVolume);
+
+      // 检测是否为对话模式
+      const isDialogue = /^[WwMmQqAa][：:]/m.test(text);
+
+      ttsSynthInfo.textContent = isDialogue ? "正在合成对话音频..." : "正在合成音频...";
+      ttsSynthInfo.className = "modal-info loading";
+      ttsSynthPlay.disabled = true;
+      ttsSynthAudioWrap.classList.add("hidden");
+
+      try {
+        const resp = await fetch("http://127.0.0.1:8766/api/tts", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            text,
+            dialogue: isDialogue,
+            format: "mp3",
+            sample_rate: 24000,
+            // 非对话模式使用女声设置
+            speaker: isDialogue ? undefined : femaleVoice,
+            speed_ratio: isDialogue ? undefined : femaleSpeed,
+            volume_ratio: isDialogue ? undefined : femaleVolume,
+            // 对话模式参数
+            female_speaker: femaleVoice,
+            male_speaker: maleVoice,
+            female_speed: femaleSpeed,
+            male_speed: maleSpeed,
+            female_volume: femaleVolume,
+            male_volume: maleVolume,
+          }),
+        });
+
+        if (!resp.ok) {
+          const errText = await resp.text().catch(() => "");
+          throw new Error(errText || `HTTP ${resp.status}`);
+        }
+
+        const data = await resp.json();
+        if (!data.audioBase64) {
+          throw new Error("返回数据无音频");
+        }
+
+        synthAudioBase64 = data.audioBase64;
+        const modeDesc = isDialogue ? "对话模式" : "单音色模式";
+        ttsSynthInfo.textContent = `合成成功！(${modeDesc})`;
+        ttsSynthInfo.className = "modal-info";
+
+        // 显示播放器
+        const audioUrl = `data:audio/mp3;base64,${synthAudioBase64}`;
+        ttsSynthAudio.src = audioUrl;
+        ttsSynthAudioWrap.classList.remove("hidden");
+        ttsSynthDownload.disabled = false;
+
+        // 自动播放
+        ttsSynthAudio.play();
+
+      } catch (e) {
+        ttsSynthInfo.textContent = `合成失败: ${e.message}`;
+        ttsSynthInfo.className = "modal-info error";
+      } finally {
+        ttsSynthPlay.disabled = false;
+      }
+    });
+  }
+
+  // 下载按钮
+  if (ttsSynthDownload) {
+    ttsSynthDownload.addEventListener("click", () => {
+      if (!synthAudioBase64) {
+        ttsSynthInfo.textContent = "请先点击合成生成音频";
+        ttsSynthInfo.className = "modal-info error";
+        return;
+      }
+
+      const blob = base64ToBlob(synthAudioBase64, "audio/mpeg");
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `tts_custom_${Date.now()}.mp3`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      ttsSynthInfo.textContent = "下载已开始";
+      ttsSynthInfo.className = "modal-info";
+    });
+  }
+
+  // ── 侧边栏模式 ──────────────────────────────────────────────────
+  const openSidePanelBtn = document.getElementById("openSidePanel");
+  if (openSidePanelBtn) {
+    openSidePanelBtn.addEventListener("click", async () => {
+      try {
+        // Chrome 114+ 支持 side panel API
+        if (chrome.sidePanel) {
+          const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+          if (tab?.id) {
+            await chrome.sidePanel.open({ tabId: tab.id });
+            window.close(); // 关闭弹窗
+          }
+        } else {
+          alert("当前浏览器版本不支持侧边栏功能，请升级到 Chrome 114 或更高版本。");
+        }
+      } catch (e) {
+        console.error("打开侧边栏失败:", e);
+        alert("打开侧边栏失败: " + e.message);
+      }
+    });
+  }
 })();
 
 // ─── 接收来自 background.js 和 content.js 的实时消息 ───────────────────────

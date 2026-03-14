@@ -14,6 +14,13 @@
       <div class="tab-item" id="tabAdvanced" style="display: none;">高级模式</div>
     </div>
     <div class="header-actions">
+      <!-- 侧边栏模式 -->
+      <div class="header-icon" id="openSidePanel" title="在侧边栏打开（常驻）">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+          <line x1="15" y1="3" x2="15" y2="21"/>
+        </svg>
+      </div>
       <!-- 设置入口 -->
       <div class="header-icon" id="settingsToggle" title="设置">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -140,11 +147,20 @@
             <span class="settings-unit">x</span>
           </div>
         </div>
+
+        <!-- TTS 合成按钮 -->
+        <div class="settings-subsection" style="margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--gray-200);">
+          <button type="button" class="btn btn-brand btn-full" id="ttsSynthesizeBtn">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+            自定义合成音频
+          </button>
+          <div class="settings-hint" style="margin-top: 4px;">输入文本合成音频，支持 W:/M:/Q:/A: 对话标记</div>
+        </div>
       </div>
     </div>
   </header>
   
-  <!-- TTS 试听弹窗 -->
+  <!-- TTS 试听弹窗（单音色） -->
   <div id="ttsTestModal" class="modal hidden">
     <div class="modal-backdrop"></div>
     <div class="modal-content">
@@ -166,6 +182,42 @@
           下载
         </button>
         <button type="button" class="btn btn-primary" id="ttsTestModalOk">确定</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- TTS 自定义合成弹窗（支持对话模式） -->
+  <div id="ttsSynthModal" class="modal hidden">
+    <div class="modal-backdrop"></div>
+    <div class="modal-content modal-content-lg">
+      <div class="modal-header">
+        <span class="modal-title">🎵 自定义合成音频</span>
+        <button type="button" class="modal-close" id="ttsSynthModalClose">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="modal-hint">
+          支持对话标记：<code>W:</code> <code>Q:</code> 女声，<code>M:</code> <code>A:</code> 男声<br>
+          无标记时使用女声合成
+        </div>
+        <textarea id="ttsSynthText" class="modal-textarea" placeholder="输入要合成的文本，例如：
+W: Good morning! How can I help you today?
+M: I'd like to book a room for two nights.
+W: Sure, we have rooms available. What type would you prefer?" rows="8"></textarea>
+        <div class="modal-info" id="ttsSynthInfo"></div>
+        <div class="modal-audio-wrap hidden" id="ttsSynthAudioWrap">
+          <audio id="ttsSynthAudio" controls class="modal-audio"></audio>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-brand" id="ttsSynthPlay">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/></svg>
+          合成
+        </button>
+        <button type="button" class="btn btn-secondary" id="ttsSynthDownload" disabled>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          下载
+        </button>
+        <button type="button" class="btn btn-secondary" id="ttsSynthModalCancel">关闭</button>
       </div>
     </div>
   </div>
@@ -339,7 +391,7 @@
         题库录入 AI
         <span id="statusBadge" class="status-dot"></span>
       </div>
-      <div class="footer-subtitle">研发辅助扩展 v6.2</div>
+      <div class="footer-subtitle">研发辅助扩展 v7.0.1</div>
     </div>
     <div class="footer-actions">
       <div id="jsonHistoryWrap" class="footer-history-wrap">
