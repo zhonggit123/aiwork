@@ -34,7 +34,10 @@
     <div id="settingsDropdown" class="settings-dropdown hidden">
       <!-- 模型选择 -->
       <div class="settings-section">
-        <div class="settings-section-title">AI 模型</div>
+        <div class="settings-section-title">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:4px; vertical-align:-2px;"><path d="M12 2a10 10 0 1 0 10 10H12V2z"/><path d="M12 12 2.1 7.1"/><path d="M12 12l9.9 4.9"/></svg>
+          AI 模型
+        </div>
         <label class="settings-radio-item">
           <input type="radio" name="modelChoice" id="modelPro" value="doubao-seed-2-0-pro-260215" checked />
           <span>默认 (2.0 Pro)</span>
@@ -47,7 +50,10 @@
 
       <!-- 思考程度 -->
       <div class="settings-section">
-        <div class="settings-section-title">思考程度</div>
+        <div class="settings-section-title">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:4px; vertical-align:-2px;"><path d="M9.59 4.59A2 2 0 1 1 11 8H2m10.59 11.41A2 2 0 1 0 14 16H2m15.73-8.27A2.5 2.5 0 1 1 19.5 12H2"/></svg>
+          思考程度
+        </div>
         <select id="reasoningEffort" class="settings-select" title="通过 reasoning.effort 调节思考长度">
           <option value="minimal">minimal — 关闭思考，直接回答</option>
           <option value="low">low — 轻量思考，侧重快速响应</option>
@@ -61,7 +67,10 @@
 
       <!-- 功能开关 -->
       <div class="settings-section">
-        <div class="settings-section-title">功能</div>
+        <div class="settings-section-title">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:4px; vertical-align:-2px;"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 9.36l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 9.36-7.94l-3.79 3.79z"/></svg>
+          功能
+        </div>
         <!-- 高级 JSON：导航到新页面 -->
         <div class="settings-nav-item" id="settingsAdvancedToggle">
           <span>高级 JSON 模式</span>
@@ -78,7 +87,10 @@
 
       <!-- 默认媒体 URL -->
       <div class="settings-section">
-        <div class="settings-section-title">默认媒体 URL</div>
+        <div class="settings-section-title">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:4px; vertical-align:-2px;"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+          默认媒体 URL
+        </div>
         <input id="defaultAudioUrl" type="text" class="settings-input" placeholder="音频 mp3 地址" value="111.mp3" />
         <input id="defaultImageUrl" type="text" class="settings-input" placeholder="图片 jpg/png 地址" style="margin-top:6px;" value="222.png" />
       </div>
@@ -88,7 +100,10 @@
       <!-- TTS 语音合成设置 -->
       <div class="settings-section">
         <div class="settings-section-header">
-          <span class="settings-section-title">🎵 语音合成 (TTS)</span>
+          <span class="settings-section-title">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:4px; vertical-align:-2px;"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+            语音合成 (TTS)
+          </span>
           <button type="button" class="settings-reset-btn" id="ttsResetDefaults" title="重置为默认值">重置</button>
         </div>
         <div class="settings-hint">提示：moon系列支持语速/音量调节；mars/uranus系列语速无效</div>
@@ -96,7 +111,10 @@
         <!-- 女声设置 -->
         <div class="settings-subsection">
           <div class="settings-subsection-header">
-            <span class="settings-subsection-title">👩 女声 (W:/Q:)</span>
+            <span class="settings-subsection-title">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:4px; vertical-align:-2px;"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+              女声 (W:/Q:)
+            </span>
             <button type="button" class="settings-test-btn" id="ttsTestFemale" title="试听女声">试听</button>
           </div>
           <div class="settings-row">
@@ -123,7 +141,10 @@
         <!-- 男声设置 -->
         <div class="settings-subsection">
           <div class="settings-subsection-header">
-            <span class="settings-subsection-title">👨 男声 (M:/A:)</span>
+            <span class="settings-subsection-title">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:4px; vertical-align:-2px;"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+              男声 (M:/A:)
+            </span>
             <button type="button" class="settings-test-btn" id="ttsTestMale" title="试听男声">试听</button>
           </div>
           <div class="settings-row">
@@ -208,7 +229,10 @@
     <div class="modal-backdrop"></div>
     <div class="modal-content modal-content-lg">
       <div class="modal-header">
-        <span class="modal-title">🎵 自定义合成音频</span>
+        <span class="modal-title">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:6px; vertical-align:-3px;"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+          自定义合成音频
+        </span>
         <button type="button" class="modal-close" id="ttsSynthModalClose">&times;</button>
       </div>
       <div class="modal-body">
@@ -414,9 +438,10 @@ W: Sure, we have rooms available. What type would you prefer?" rows="8"></textar
       <div id="jsonHistoryWrap" class="footer-history-wrap">
         <button type="button" id="jsonHistoryBtn" class="footer-history-btn" title="最近使用的 JSON，点击填充">
           <span id="fillCacheDot" class="footer-fill-dot hidden"></span>
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <circle cx="12" cy="12" r="10"/>
-            <polyline points="12 6 12 12 16 14"/>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="1 4 1 10 7 10"/>
+            <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>
+            <polyline points="12 7 12 12 15 15"/>
           </svg>
         </button>
         <div id="jsonHistoryDropdown" class="json-history-dropdown hidden"></div>
