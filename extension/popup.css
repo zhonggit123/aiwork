@@ -51,6 +51,7 @@
 html {
   height: 100%;
   width: 100%;
+  background: #ffffff;
 }
 
 body {
@@ -78,6 +79,18 @@ body.sidepanel-mode {
   width: 100% !important;
   min-width: 280px;
   max-width: 100% !important;
+}
+
+/* 侧边栏模式下确保所有区域背景不透明 */
+html.sidepanel-mode header,
+html.sidepanel-mode main,
+html.sidepanel-mode footer,
+body.sidepanel-mode header,
+body.sidepanel-mode main,
+body.sidepanel-mode footer {
+  width: 100% !important;
+  max-width: 100% !important;
+  box-sizing: border-box;
 }
 
 /* Header - Tab Style */
@@ -1272,14 +1285,25 @@ footer {
   min-width: 260px;
   max-width: calc(100vw - 32px);
   width: max-content;
-  max-height: 240px;
+  max-height: 280px;
   overflow-y: auto;
-  background: #fff;
+  overflow-x: hidden;
+  background: #ffffff;
   border: 1px solid var(--gray-200);
   border-radius: var(--radius-sm);
   box-shadow: var(--shadow-lg);
   z-index: 100;
   padding: 6px 0;
+}
+
+/* 侧边栏模式下历史弹窗宽度限制 */
+.sidepanel-mode .json-history-dropdown {
+  max-width: calc(100% - 16px);
+  right: 8px;
+}
+
+.json-history-dropdown .json-history-item {
+  background: #ffffff;
 }
 
 .json-history-dropdown.hidden {
