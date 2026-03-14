@@ -182,7 +182,7 @@ header {
   background: #fff;
   border: 1px solid var(--gray-200);
   border-radius: 10px;
-  box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.15), 0 2px 8px rgba(0,0,0,0.1);
   z-index: 200;
   overflow-y: auto;
   overflow-x: hidden;
@@ -1285,15 +1285,29 @@ footer {
   min-width: 260px;
   max-width: calc(100vw - 32px);
   width: max-content;
-  max-height: 280px;
-  overflow-y: auto;
+  max-height: 320px;
+  overflow-y: auto !important;
   overflow-x: hidden;
   background: #ffffff;
   border: 1px solid var(--gray-200);
   border-radius: var(--radius-sm);
-  box-shadow: var(--shadow-lg);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.15), 0 2px 8px rgba(0,0,0,0.1);
   z-index: 100;
   padding: 6px 0;
+}
+
+.json-history-dropdown::-webkit-scrollbar {
+  width: 6px;
+}
+.json-history-dropdown::-webkit-scrollbar-track {
+  background: transparent;
+}
+.json-history-dropdown::-webkit-scrollbar-thumb {
+  background: var(--gray-300);
+  border-radius: 3px;
+}
+.json-history-dropdown::-webkit-scrollbar-thumb:hover {
+  background: var(--gray-400);
 }
 
 /* 侧边栏模式下历史弹窗宽度限制 */
