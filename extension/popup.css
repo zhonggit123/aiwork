@@ -130,18 +130,11 @@ header {
   color: var(--gray-900);
   line-height: 48px;
   position: relative;
-  cursor: pointer;
+  cursor: default;
 }
 
 .tab-item.active::after {
-  content: '';
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  height: 3px;
-  background: var(--gray-900);
-  border-radius: 2px 2px 0 0;
+  content: none;
 }
 
 .header-actions {
