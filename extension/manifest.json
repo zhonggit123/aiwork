@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "题库自动填表",
-  "version": "7.0.1",
-  "description": "在录题页面粘贴题目 JSON，一键填充表单，支持 TTS 语音合成",
+  "name": "题库录入 AI",
+  "version": "7.0.2",
+  "description": "AI 辅助录入，支持 Word/PDF 解析、TTS 语音合成、一键填充表单",
   "icons": {
     "16": "icons/icon16.png",
     "32": "icons/icon32.png",

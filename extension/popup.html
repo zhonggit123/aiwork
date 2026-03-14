@@ -10,7 +10,7 @@
 
   <header>
     <div class="header-tabs">
-      <div class="tab-item active" id="tabAuto">自动录入</div>
+      <div class="tab-item active" id="tabAuto">题库录入 AI</div>
       <div class="tab-item" id="tabAdvanced" style="display: none;">高级模式</div>
     </div>
     <div class="header-actions">
@@ -268,7 +268,7 @@ W: Sure, we have rooms available. What type would you prefer?" rows="8"></textar
         </div>
       </div>
 
-      <!-- 选择 Word 文件上传 -->
+      <!-- 选择文件上传 -->
       <div class="drop-zone" id="dropZone">
           <!-- 默认/已选文件 -->
           <div id="dzNormal">
@@ -281,8 +281,8 @@ W: Sure, we have rooms available. What type would you prefer?" rows="8"></textar
                 <polyline points="10 9 9 9 8 9"/>
               </svg>
             </div>
-            <div class="drop-text">点击选择 Word 文件</div>
-            <div class="drop-subtext">支持 .docx 格式，可多选</div>
+            <div class="drop-text">点击选择文件</div>
+            <div class="drop-subtext">支持 Word (.docx) 和 PDF 格式，可多选</div>
             <div id="uploadStepHint" class="drop-subtext" style="font-size:11px; margin-top:6px; opacity:0.8;"></div>
           </div>
 
@@ -319,7 +319,7 @@ W: Sure, we have rooms available. What type would you prefer?" rows="8"></textar
           </div>
       </div>
 
-      <input type="file" id="wordFiles" accept=".docx,.doc" multiple style="display:none;" />
+      <input type="file" id="wordFiles" accept=".docx,.doc,.pdf" multiple style="display:none;" />
 
       <!-- 解析并填入 -->
       <div class="grid-card dark card-full-row" id="uploadAndFill">
@@ -391,7 +391,7 @@ W: Sure, we have rooms available. What type would you prefer?" rows="8"></textar
         题库录入 AI
         <span id="statusBadge" class="status-dot"></span>
       </div>
-      <div class="footer-subtitle">研发辅助扩展 v7.0.1</div>
+      <div class="footer-subtitle">AI 辅助录入 v7.0.2</div>
     </div>
     <div class="footer-actions">
       <div id="jsonHistoryWrap" class="footer-history-wrap">

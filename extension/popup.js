@@ -1107,7 +1107,7 @@ function getWordFiles(files) {
   if (!files || !files.length) return [];
   return Array.from(files).filter((f) => {
     const n = (f.name || "").toLowerCase();
-    return n.endsWith(".docx") || n.endsWith(".doc");
+    return n.endsWith(".docx") || n.endsWith(".doc") || n.endsWith(".pdf");
   });
 }
 
@@ -1289,8 +1289,8 @@ function setDropZoneState(state, data = {}) {
   if (state === "idle") {
     dzN.classList.remove("hidden");
     dzN.querySelector(".drop-icon").innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>`;
-    dzN.querySelector(".drop-text").textContent = "点击选择 Word 文件";
-    dzN.querySelector(".drop-subtext").textContent = "支持 .docx 格式，可多选";
+    dzN.querySelector(".drop-text").textContent = "点击选择文件";
+    dzN.querySelector(".drop-subtext").textContent = "支持 Word (.docx) 和 PDF 格式，可多选";
     upBtn.classList.remove("is-parsing");
     upBtn.style.pointerEvents = "auto";
     const upTitle = upBtn.querySelector(".card-title");
@@ -1433,11 +1433,21 @@ function setDropZoneState(state, data = {}) {
 function fileToBase64(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onload  = (e) => resolve({
-      name: file.name,
-      mimeType: file.type || "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-      base64: e.target.result.split(",")[1],
-    });
+    reader.onload  = (e) => {
+      let mimeType = file.type;
+      if (!mimeType) {
+        const ext = (file.name || "").toLowerCase().split(".").pop();
+        if (ext === "pdf") mimeType = "application/pdf";
+        else if (ext === "docx") mimeType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+        else if (ext === "doc") mimeType = "application/msword";
+        else mimeType = "application/octet-stream";
+      }
+      resolve({
+        name: file.name,
+        mimeType,
+        base64: e.target.result.split(",")[1],
+      });
+    };
     reader.onerror = () => reject(new Error(`读取文件失败：${file.name}`));
     reader.readAsDataURL(file);
   });
@@ -1895,7 +1905,7 @@ async function doFill(questions, skipTts = false) {
 // ─── 上传 Word → 发给 background worker（弹窗关闭不中断）───────────────────
 async function doUploadAndFill(filesToUse) {
   if (!filesToUse || filesToUse.length === 0) {
-    setMsg("请选择或拖入至少一个 .docx 文件", true);
+    setMsg("请选择或拖入至少一个 Word 或 PDF 文件", true);
     return;
   }
 
@@ -2076,10 +2086,10 @@ if (dropZone) {
       setDropZoneState("selected", { files: list });
       doUploadAndFill(list);
     } else if (rawFiles.length > 0) {
-      setMsg("请选择 .docx 或 .doc 文件", true);
+      setMsg("请选择 Word (.docx) 或 PDF 文件", true);
     } else {
       // 弹窗不支持拖拽，帮用户打开文件选择
-      setMsg("请在下方的文件选择窗口中选择 .docx 文件", false);
+      setMsg("请在下方的文件选择窗口中选择文件", false);
       document.getElementById("wordFiles").click();
     }
   }, { capture: true });
