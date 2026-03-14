@@ -4,6 +4,22 @@ const onlyWhenDetected = document.getElementById("onlyWhenDetected");
 const whenNotDetected = document.getElementById("whenNotDetected");
 const statusBadge = document.getElementById("statusBadge");
 
+// 检测是否为侧边栏模式（通过窗口高度判断，侧边栏通常比 popup 高很多）
+(function detectSidePanelMode() {
+  const isSidePanel = window.innerHeight > 600 || window.location.search.includes("sidepanel");
+  if (isSidePanel) {
+    document.documentElement.classList.add("sidepanel-mode");
+    document.body.classList.add("sidepanel-mode");
+  }
+  // 监听窗口大小变化
+  window.addEventListener("resize", () => {
+    if (window.innerHeight > 600) {
+      document.documentElement.classList.add("sidepanel-mode");
+      document.body.classList.add("sidepanel-mode");
+    }
+  });
+})();
+
 /**
  * 存入 storage.sync 前精简 slots，只保留填充必需的字段，避免超过 8KB/item 配额。
  * currentSlotFields / sectionLabels / subQuestions 等仅在构建 prompt 时有用，无需持久化。
