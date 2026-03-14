@@ -92,12 +92,23 @@ header {
   position: sticky;
   top: 0;
   z-index: 50;
+  flex-shrink: 0;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .header-tabs {
   display: flex;
-  gap: 20px;
+  gap: 12px;
   height: 100%;
+  align-items: center;
+}
+
+.header-logo {
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  flex-shrink: 0;
 }
 
 .tab-item {
@@ -1645,6 +1656,45 @@ input[type="text"]:focus {
   color: var(--gray-800);
   border-color: var(--gray-400);
   background: var(--gray-50);
+}
+
+/* ── 文件预览弹窗 ─────────────────────────────────────────── */
+.file-preview-content {
+  max-height: 300px;
+  overflow-y: auto;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--gray-700);
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: var(--gray-50);
+  padding: 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--gray-200);
+}
+
+.file-preview-content:empty::before {
+  content: "正在读取文件内容...";
+  color: var(--gray-400);
+}
+
+.file-preview-loading {
+  text-align: center;
+  padding: 20px;
+  color: var(--gray-500);
+}
+
+/* 文件名可点击预览 */
+.drop-zone.has-files .drop-text {
+  cursor: pointer;
+  color: var(--brand-green);
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-underline-offset: 3px;
+}
+
+.drop-zone.has-files .drop-text:hover {
+  color: var(--success);
 }
 
 /* ── TTS 合成弹窗样式 ─────────────────────────────────────────── */

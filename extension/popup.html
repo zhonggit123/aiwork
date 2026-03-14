@@ -10,6 +10,7 @@
 
   <header>
     <div class="header-tabs">
+      <img src="icons/icon32.png" alt="Logo" class="header-logo" />
       <div class="tab-item active" id="tabAuto">题库录入 AI</div>
       <div class="tab-item" id="tabAdvanced" style="display: none;">高级模式</div>
     </div>
@@ -160,6 +161,23 @@
     </div>
   </header>
   
+  <!-- 文件预览弹窗 -->
+  <div id="filePreviewModal" class="modal hidden">
+    <div class="modal-backdrop"></div>
+    <div class="modal-content modal-content-lg">
+      <div class="modal-header">
+        <span class="modal-title" id="filePreviewTitle">文件预览</span>
+        <button type="button" class="modal-close" id="filePreviewClose">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div id="filePreviewContent" class="file-preview-content"></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-primary" id="filePreviewOk">确定</button>
+      </div>
+    </div>
+  </div>
+
   <!-- TTS 试听弹窗（单音色） -->
   <div id="ttsTestModal" class="modal hidden">
     <div class="modal-backdrop"></div>
@@ -407,6 +425,7 @@ W: Sure, we have rooms available. What type would you prefer?" rows="8"></textar
     </div>
   </footer>
 
+  <script src="jszip.min.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>

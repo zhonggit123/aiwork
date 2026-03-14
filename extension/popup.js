@@ -2095,11 +2095,124 @@ if (dropZone) {
   }, { capture: true });
 }
 
+// 保存当前选中的文件列表，供预览使用
+let _selectedFiles = [];
+
 document.getElementById("wordFiles").addEventListener("change", function () {
   const list = getWordFiles(this.files);
   if (list.length) {
+    _selectedFiles = list;
     setDropZoneState("selected", { files: list });
     setMsg("", false);
+  }
+});
+
+// ─── 文件预览弹窗 ──────────────────────────────────────────────────────────
+const filePreviewModal = document.getElementById("filePreviewModal");
+const filePreviewTitle = document.getElementById("filePreviewTitle");
+const filePreviewContent = document.getElementById("filePreviewContent");
+const filePreviewClose = document.getElementById("filePreviewClose");
+const filePreviewOk = document.getElementById("filePreviewOk");
+
+function closeFilePreview() {
+  if (filePreviewModal) filePreviewModal.classList.add("hidden");
+}
+
+if (filePreviewClose) filePreviewClose.addEventListener("click", closeFilePreview);
+if (filePreviewOk) filePreviewOk.addEventListener("click", closeFilePreview);
+if (filePreviewModal) {
+  filePreviewModal.querySelector(".modal-backdrop")?.addEventListener("click", closeFilePreview);
+}
+
+async function showFilePreview(file) {
+  if (!filePreviewModal || !file) return;
+  
+  filePreviewTitle.textContent = file.name;
+  filePreviewContent.innerHTML = '<div class="file-preview-loading">正在读取文件内容...</div>';
+  filePreviewModal.classList.remove("hidden");
+  
+  try {
+    const ext = (file.name || "").toLowerCase().split(".").pop();
+    
+    if (ext === "pdf") {
+      // PDF 文件：提示需要后端解析
+      filePreviewContent.innerHTML = `
+        <div style="text-align:center; padding:20px; color:var(--gray-500);">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="margin-bottom:12px;">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+            <polyline points="14 2 14 8 20 8"/>
+            <path d="M9 15h6"/>
+            <path d="M9 11h6"/>
+          </svg>
+          <div style="font-weight:500; margin-bottom:4px;">PDF 文件</div>
+          <div style="font-size:12px;">文件大小: ${(file.size / 1024).toFixed(1)} KB</div>
+          <div style="font-size:12px; margin-top:8px; color:var(--gray-400);">PDF 内容将在解析时由 AI 提取</div>
+        </div>
+      `;
+    } else {
+      // Word 文件：尝试读取文本内容
+      const text = await readDocxText(file);
+      if (text) {
+        filePreviewContent.textContent = text.slice(0, 3000) + (text.length > 3000 ? "\n\n... (内容过长，已截断)" : "");
+      } else {
+        filePreviewContent.innerHTML = `
+          <div style="text-align:center; padding:20px; color:var(--gray-500);">
+            <div style="font-weight:500; margin-bottom:4px;">Word 文件</div>
+            <div style="font-size:12px;">文件大小: ${(file.size / 1024).toFixed(1)} KB</div>
+            <div style="font-size:12px; margin-top:8px; color:var(--gray-400);">内容将在解析时由 AI 提取</div>
+          </div>
+        `;
+      }
+    }
+  } catch (e) {
+    filePreviewContent.innerHTML = `<div style="color:var(--error);">读取文件失败: ${e.message}</div>`;
+  }
+}
+
+// 简单的 docx 文本提取（仅提取纯文本，不含格式）
+async function readDocxText(file) {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      try {
+        const arrayBuffer = e.target.result;
+        const zip = await JSZip.loadAsync(arrayBuffer);
+        const docXml = await zip.file("word/document.xml")?.async("string");
+        if (!docXml) {
+          resolve(null);
+          return;
+        }
+        // 简单提取 <w:t> 标签内的文本
+        const textMatches = docXml.match(/<w:t[^>]*>([^<]*)<\/w:t>/g) || [];
+        const text = textMatches
+          .map(m => m.replace(/<[^>]+>/g, ""))
+          .join("")
+          .replace(/\s+/g, " ")
+          .trim();
+        resolve(text || null);
+      } catch {
+        resolve(null);
+      }
+    };
+    reader.onerror = () => resolve(null);
+    reader.readAsArrayBuffer(file);
+  });
+}
+
+// 点击 drop-zone 中的文件名时预览
+document.getElementById("dropZone")?.addEventListener("click", (e) => {
+  const dz = document.getElementById("dropZone");
+  const dzN = document.getElementById("dzNormal");
+  
+  // 只有在 selected 状态（有文件）且点击的是文件名区域时才预览
+  if (dz.classList.contains("has-files") && _selectedFiles.length > 0) {
+    const dropText = dzN?.querySelector(".drop-text");
+    if (dropText && dropText.contains(e.target)) {
+      e.stopPropagation();
+      // 如果只有一个文件，直接预览；多个文件时预览第一个
+      showFilePreview(_selectedFiles[0]);
+      return;
+    }
   }
 });
 
