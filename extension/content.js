@@ -1849,6 +1849,83 @@ function prepareTtsText(text) {
   }
 }
 
+/**
+ * 带重试的 TTS 合成请求
+ * @param {Object} params TTS 参数
+ * @param {string} params.text 要合成的文本
+ * @param {boolean} params.dialogue 是否对话格式
+ * @param {string} params.provider TTS 服务商
+ * @param {string} params.femaleVoice 女声音色
+ * @param {string} params.maleVoice 男声音色
+ * @param {number} params.femaleSpeed 女声语速
+ * @param {number} params.maleSpeed 男声语速
+ * @param {number} params.femaleVolume 女声音量
+ * @param {number} params.maleVolume 男声音量
+ * @param {string} params.contextTexts 上下文文本（豆包专用）
+ * @param {number} maxRetries 最大重试次数
+ * @param {string} logPrefix 日志前缀
+ * @param {Function} logFn 日志函数（可选，默认 console.log）
+ * @returns {Promise<string|null>} 成功返回 base64 音频数据，失败返回 null
+ */
+async function ttsWithRetry(params, maxRetries = 3, logPrefix = "", logFn = null) {
+  const _log = logFn || ((...args) => console.log("[AI录题TTS]", ...args));
+  const {
+    text, dialogue, provider,
+    femaleVoice, maleVoice,
+    femaleSpeed, maleSpeed,
+    femaleVolume, maleVolume,
+    contextTexts
+  } = params;
+  
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      if (attempt > 1) {
+        _log(`${logPrefix}TTS 第 ${attempt} 次重试…`);
+        await new Promise(r => setTimeout(r, 1000 * attempt)); // 递增延迟
+      }
+      
+      const resp = await fetch("http://127.0.0.1:8766/api/tts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          text,
+          dialogue,
+          format: "mp3",
+          sample_rate: 24000,
+          provider,
+          speed_ratio: dialogue ? undefined : femaleSpeed,
+          volume_ratio: dialogue ? undefined : femaleVolume,
+          female_speaker: femaleVoice,
+          male_speaker: maleVoice,
+          female_speed: femaleSpeed,
+          male_speed: maleSpeed,
+          female_volume: femaleVolume,
+          male_volume: maleVolume,
+          context_texts: provider === "doubao" ? (contextTexts || undefined) : undefined,
+        }),
+      });
+      
+      if (resp.ok) {
+        const data = await resp.json();
+        if (data.audioBase64) {
+          _log(`${logPrefix}TTS 合成成功（第 ${attempt} 次），音频大小: ${data.audioBase64.length} 字符`);
+          return data.audioBase64;
+        } else {
+          _log(`${logPrefix}TTS 返回无音频数据（第 ${attempt} 次）`);
+        }
+      } else {
+        const errText = await resp.text().catch(() => "");
+        _log(`${logPrefix}TTS 失败 HTTP ${resp.status}（第 ${attempt} 次）: ${errText.slice(0, 80)}`);
+      }
+    } catch (e) {
+      _log(`${logPrefix}TTS 异常（第 ${attempt} 次）: ${e.message}`);
+    }
+  }
+  
+  _log(`${logPrefix}TTS 合成失败，已重试 ${maxRetries} 次`);
+  return null;
+}
+
 async function runFill(questions, selectors, defaultAudioUrl, defaultImageUrl, debugSource, ttsSettings) {
   // TTS 设置默认值
   const tts = ttsSettings || {};
@@ -2535,22 +2612,51 @@ async function runFill(questions, selectors, defaultAudioUrl, defaultImageUrl, d
     
     if (audioFileSels.length === 0 && audioUrlSels.length === 0) {
       const scope = document.querySelector(".topic-container, #topic-section, #right-container, .question-part") || document.body;
+      
+      // 检测音频 URL 输入框（扩展选择器）
       const audioUrlInput = scope.querySelector(
         "#audioFileName, #audioFileName1, input.audioFileName, input[id^='audioFileName'], " +
-        "input[id*='audio'][type='text'], input[placeholder*='mp3'], input[placeholder*='音频']"
+        "input[id*='audio'][type='text'], input[placeholder*='mp3'], input[placeholder*='音频'], " +
+        "input[name*='audio'], input[id*='Audio'], .audio-input input[type='text']"
       );
       if (audioUrlInput) {
         const sel = audioUrlInput.id ? `#${audioUrlInput.id}` : (audioUrlInput.name ? `input[name="${audioUrlInput.name}"]` : null);
         if (sel) audioUrlSels = [sel];
+        log(`  初始检测到音频URL输入框: ${sel}`);
       }
+      
+      // 检测音频上传容器（扩展选择器）
       const audioUploadContainer = scope.querySelector(
-        "#audio_upload1, #audio_upload, div[id*='audio_upload'], .uploadify[id*='audio']"
+        "#audio_upload1, #audio_upload, div[id*='audio_upload'], .uploadify[id*='audio'], " +
+        ".uploadify, [class*='audio'][class*='upload'], [class*='upload'][class*='audio'], " +
+        ".file-upload-area, .upload-container, div[class*='uploadify']"
       );
       if (audioUploadContainer) {
         const fi = audioUploadContainer.querySelector("input[type='file']");
         if (fi) {
-          const sel = fi.id ? `#${fi.id}` : null;
-          if (sel) audioFileSels = [sel];
+          const sel = fi.id ? `#${fi.id}` : "input[type='file']";
+          audioFileSels = [sel];
+          log(`  初始检测到音频上传框: ${sel}`);
+        }
+      }
+      
+      // 如果还没找到，尝试更宽松的匹配
+      if (audioFileSels.length === 0) {
+        // 查找所有 uploadify 容器
+        const allUploadify = scope.querySelectorAll(".uploadify, [class*='uploadify']");
+        for (const container of allUploadify) {
+          // 判断是否是音频上传（通过周围文本或 ID）
+          const parentText = (container.closest(".row, .form-group, label")?.innerText || "").toLowerCase();
+          const containerId = (container.id || "").toLowerCase();
+          if (parentText.includes("音频") || parentText.includes("录音") || containerId.includes("audio")) {
+            const fi = container.querySelector("input[type='file']");
+            if (fi) {
+              const sel = fi.id ? `#${fi.id}` : "input[type='file']";
+              audioFileSels = [sel];
+              log(`  宽松匹配到音频上传框: ${sel}`);
+              break;
+            }
+          }
         }
       }
     }
@@ -2580,21 +2686,26 @@ async function runFill(questions, selectors, defaultAudioUrl, defaultImageUrl, d
     log(`  第 ${i + 1} 题 子题TTS检查: blanks数=${blanks.length}, 页面blank_audio选择器=${blankAudioKeys.join(',') || '无'}`);
     
     // 如果有 blanks 且页面有对应的 blank_audio_N 选择器，为每个子题单独合成
+    // 注意：如果顶层已有 listening_script（情形B：共享对话），子题不应单独合成，除非子题自己有独立的 listening_script
+    const topHasListeningScript = listeningScriptValue.length > 0;
+    
     if (blanks.length > 0 && hasBlankAudioSelectors) {
-      log(`  第 ${i + 1} 题：检测到 ${blanks.length} 个子题，检查是否需要为子题合成 TTS`);
+      log(`  第 ${i + 1} 题：检测到 ${blanks.length} 个子题，检查是否需要为子题合成 TTS (顶层有原文=${topHasListeningScript})`);
       
       for (let bi = 0; bi < blanks.length; bi++) {
         const blank = blanks[bi];
-        // 优先使用子题的 listening_script，如果没有则使用 question（题干）
+        // 子题只用自己的 listening_script，不用 question 替代
+        // 如果顶层有共享对话，子题没有独立原文时不应单独合成
         let blankScript = (blank.listening_script || blank.listeningScript || blank.script || "").trim();
         const blankQuestion = (blank.question || "").trim();
         
         // 调试：显示子题的所有相关字段
         log(`    子题 ${bi + 1} 数据: listening_script="${(blank.listening_script || '').slice(0, 30)}", question="${blankQuestion.slice(0, 30)}", audio_url="${blank.audio_url || '无'}"`);
         
-        if (!blankScript && blankQuestion.length > 0) {
+        // 只有当顶层没有共享对话时，才用 question 替代（情形A：各小题独立）
+        if (!blankScript && blankQuestion.length > 0 && !topHasListeningScript) {
           blankScript = blankQuestion;
-          log(`    子题 ${bi + 1}: 无听力原文，使用题干作为 TTS 文本`);
+          log(`    子题 ${bi + 1}: 顶层无共享原文，使用题干作为 TTS 文本`);
         }
         
         const blankAudioSel = curSel[`blank_audio_${bi + 1}`];
@@ -2605,49 +2716,29 @@ async function runFill(questions, selectors, defaultAudioUrl, defaultImageUrl, d
         if (blankScript && blankAudioSel && !blankHasAudio) {
           log(`    子题 ${bi + 1}: 需要TTS - 有文本(${blankScript.length}字符)，有选择器(${blankAudioSel})，无已有音频`);
           
-          // 为这个子题启动 TTS
+          // 为这个子题启动 TTS（带重试机制）
           const ttsPromiseForBlank = (async () => {
-            try {
-              // 处理文本：过滤音标，保留英文单词
-              const ttsText = prepareTtsText(blankScript);
-              if (ttsText !== blankScript) {
-                log(`    子题 ${bi + 1}: 过滤音标后文本: "${ttsText.slice(0, 50)}..."`);
-              }
-              const isDialogue = /^[WwMmQqAa][：:]/m.test(ttsText);
-              log(`    子题 ${bi + 1}: 发送 TTS 请求，isDialogue=${isDialogue}`);
-              const resp = await fetch("http://127.0.0.1:8766/api/tts", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  text: ttsText,
-                  dialogue: isDialogue,
-                  format: "mp3",
-                  sample_rate: 24000,
-                  provider: ttsProvider,
-                  speed_ratio: isDialogue ? undefined : ttsFemaleSpeed,
-                  volume_ratio: isDialogue ? undefined : ttsFemaleVolume,
-                  female_speaker: ttsFemaleVoice,
-                  male_speaker: ttsMaleVoice,
-                  female_speed: ttsFemaleSpeed,
-                  male_speed: ttsMaleSpeed,
-                  female_volume: ttsFemaleVolume,
-                  male_volume: ttsMaleVolume,
-                  context_texts: ttsProvider === "doubao" ? (ttsContextTexts || undefined) : undefined,
-                }),
-              });
-              if (resp.ok) {
-                const data = await resp.json();
-                if (data.audioBase64) {
-                  log(`    子题 ${bi + 1}: TTS 合成成功，音频大小: ${data.audioBase64.length} 字符`);
-                  return { index: bi, audioBase64: data.audioBase64, selector: blankAudioSel };
-                }
-              }
-              log(`    子题 ${bi + 1}: TTS 合成失败`);
-              return { index: bi, audioBase64: null, selector: blankAudioSel };
-            } catch (e) {
-              log(`    子题 ${bi + 1}: TTS 异常: ${e.message}`);
-              return { index: bi, audioBase64: null, selector: blankAudioSel };
+            // 处理文本：过滤音标，保留英文单词
+            const ttsText = prepareTtsText(blankScript);
+            if (ttsText !== blankScript) {
+              log(`    子题 ${bi + 1}: 过滤音标后文本: "${ttsText.slice(0, 50)}..."`);
             }
+            const isDialogue = /^[WwMmQqAa][：:]/m.test(ttsText);
+            
+            const audioBase64 = await ttsWithRetry({
+              text: ttsText,
+              dialogue: isDialogue,
+              provider: ttsProvider,
+              femaleVoice: ttsFemaleVoice,
+              maleVoice: ttsMaleVoice,
+              femaleSpeed: ttsFemaleSpeed,
+              maleSpeed: ttsMaleSpeed,
+              femaleVolume: ttsFemaleVolume,
+              maleVolume: ttsMaleVolume,
+              contextTexts: ttsContextTexts,
+            }, 3, `    子题 ${bi + 1}: `, log);
+            
+            return { index: bi, audioBase64: audioBase64 || null, selector: blankAudioSel };
           })();
           
           blanksTtsPromises.push(ttsPromiseForBlank);
@@ -2670,61 +2761,39 @@ async function runFill(questions, selectors, defaultAudioUrl, defaultImageUrl, d
     const hasAudio = (q.audio_url || "").trim().length > 0 || (q.audio_base64 || "").length > 0;
     const audioUrlVal = (q.audio_url || "").toString().trim() || (defaultAudioUrl || "").toString().trim();
     
+    // 检查页面是否有音频输入框（URL输入或文件上传）
+    const hasAudioInput = audioUrlSels.length > 0 || audioFileSels.length > 0;
+    
     // 详细日志：显示每道题的 TTS 判断条件
-    log(`第 ${i + 1} 题 TTS 判断: 顶层hasScript=${hasScript} (${listeningScriptValue.length}字符), hasAudio=${hasAudio}, 子题TTS数=${blanksTtsPromises.length}`);
+    log(`第 ${i + 1} 题 TTS 判断: 顶层hasScript=${hasScript} (${listeningScriptValue.length}字符), hasAudio=${hasAudio}, hasAudioInput=${hasAudioInput}, 子题TTS数=${blanksTtsPromises.length}`);
 
-    // 顶层 TTS：如果顶层有 listening_script 且没有音频，就合成顶层音频
+    // 顶层 TTS：如果顶层有 listening_script 且没有音频，且页面有音频输入框，才合成顶层音频
     // 注意：这与子题 TTS 并行进行，不会阻塞
-    if (hasScript && !hasAudio) {
+    if (hasScript && !hasAudio && hasAudioInput) {
       log(`  题目 ${i + 1} 顶层需要 TTS 合成，启动异步合成… 原文前50字: "${listeningScriptValue.slice(0, 50)}..."`);
       
-      // 异步调用 TTS API（使用已统一的 listeningScriptValue 和用户设置的音色/语速）
+      // 异步调用 TTS API（带重试机制）
       ttsPromise = (async () => {
-        try {
-          // 处理文本：过滤音标，保留英文单词
-          const ttsText = prepareTtsText(listeningScriptValue);
-          if (ttsText !== listeningScriptValue) {
-            log(`  第 ${i + 1} 题：过滤音标后文本: "${ttsText.slice(0, 80)}..."`);
-          }
-          const isDialogue = /^[WwMmQqAa][：:]/m.test(ttsText);
-          log(`  第 ${i + 1} 题：发送 TTS 请求 (${ttsProvider})，文本长度=${ttsText.length}，isDialogue=${isDialogue}，女声=${ttsFemaleVoice}(速${ttsFemaleSpeed}x/量${ttsFemaleVolume}x)，男声=${ttsMaleVoice}(速${ttsMaleSpeed}x/量${ttsMaleVolume}x)`);
-          const resp = await fetch("http://127.0.0.1:8766/api/tts", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              text: ttsText,
-              dialogue: isDialogue,
-              format: "mp3",
-              sample_rate: 24000,
-              provider: ttsProvider,
-              speed_ratio: isDialogue ? undefined : ttsFemaleSpeed,
-              volume_ratio: isDialogue ? undefined : ttsFemaleVolume,
-              female_speaker: ttsFemaleVoice,
-              male_speaker: ttsMaleVoice,
-              female_speed: ttsFemaleSpeed,
-              male_speed: ttsMaleSpeed,
-              female_volume: ttsFemaleVolume,
-              male_volume: ttsMaleVolume,
-              context_texts: ttsProvider === "doubao" ? (ttsContextTexts || undefined) : undefined,
-            }),
-          });
-          if (resp.ok) {
-            const data = await resp.json();
-            if (data.audioBase64) {
-              log(`  第 ${i + 1} 题：TTS 合成成功，音频大小: ${data.audioBase64.length} 字符`);
-              return data.audioBase64;
-            } else {
-              log(`  第 ${i + 1} 题：TTS 返回无音频数据`);
-            }
-          } else {
-            const errText = await resp.text().catch(() => "");
-            log(`  第 ${i + 1} 题：TTS 合成失败: HTTP ${resp.status} ${errText.slice(0, 100)}`);
-          }
-          return null;
-        } catch (e) {
-          log(`  第 ${i + 1} 题：TTS 合成异常: ${e.message}`);
-          return null;
+        // 处理文本：过滤音标，保留英文单词
+        const ttsText = prepareTtsText(listeningScriptValue);
+        if (ttsText !== listeningScriptValue) {
+          log(`  第 ${i + 1} 题：过滤音标后文本: "${ttsText.slice(0, 80)}..."`);
         }
+        const isDialogue = /^[WwMmQqAa][：:]/m.test(ttsText);
+        log(`  第 ${i + 1} 题：发送 TTS 请求 (${ttsProvider})，文本长度=${ttsText.length}，isDialogue=${isDialogue}`);
+        
+        return await ttsWithRetry({
+          text: ttsText,
+          dialogue: isDialogue,
+          provider: ttsProvider,
+          femaleVoice: ttsFemaleVoice,
+          maleVoice: ttsMaleVoice,
+          femaleSpeed: ttsFemaleSpeed,
+          maleSpeed: ttsMaleSpeed,
+          femaleVolume: ttsFemaleVolume,
+          maleVolume: ttsMaleVolume,
+          contextTexts: ttsContextTexts,
+        }, 3, `  第 ${i + 1} 题：`, log);
       })();
     } else {
       // 不需要 TTS 的情况
@@ -2732,6 +2801,8 @@ async function runFill(questions, selectors, defaultAudioUrl, defaultImageUrl, d
         log(`  第 ${i + 1} 题：无听力原文，跳过 TTS`);
       } else if (hasAudio) {
         log(`  第 ${i + 1} 题：已有音频，跳过 TTS`);
+      } else if (!hasAudioInput) {
+        log(`  第 ${i + 1} 题：页面无音频输入框，跳过 TTS`);
       }
     }
 
@@ -3729,6 +3800,9 @@ async function runFill(questions, selectors, defaultAudioUrl, defaultImageUrl, d
       log(`  第 ${i + 1} 题：等待 ${blanksTtsPromises.length} 个子题 TTS 合成完成…`);
       const blanksTtsResults = await Promise.all(blanksTtsPromises);
       
+      // TTS 合成期间页面可能重渲染，重新打标 .question-part
+      try { document.querySelectorAll(".question-part").forEach((pt, pi) => pt.setAttribute("data-fill-part-idx", String(pi))); } catch (_) {}
+      
       for (const result of blanksTtsResults) {
         if (!result.audioBase64) {
           log(`    子题 ${result.index + 1}: TTS 失败，跳过`);
@@ -3743,8 +3817,29 @@ async function runFill(questions, selectors, defaultAudioUrl, defaultImageUrl, d
           if (audioBlob) {
             const audioFile = new File([audioBlob], `tts_q${i + 1}_blank${result.index + 1}.mp3`, { type: "audio/mpeg" });
             
-            // 找到对应的音频输入框
-            const audioUrlEl = document.querySelector(result.selector);
+            // 找到对应的音频输入框（先用原始选择器，失败则尝试备选方案）
+            let audioUrlEl = document.querySelector(result.selector);
+            
+            // 如果找不到，尝试从选择器中提取 ID 部分直接查找
+            if (!audioUrlEl && result.selector) {
+              const idMatch = result.selector.match(/#([\w-]+)/);
+              if (idMatch) {
+                audioUrlEl = document.getElementById(idMatch[1]);
+                if (audioUrlEl) log(`    子题 ${result.index + 1}: 通过 ID 直接找到: #${idMatch[1]}`);
+              }
+            }
+            
+            // 还是找不到，尝试按小题索引查找
+            if (!audioUrlEl) {
+              const parts = document.querySelectorAll(".question-part");
+              if (parts[result.index]) {
+                audioUrlEl = parts[result.index].querySelector(
+                  "input[id*='audioFileName'], input[name*='audio'], input[type='text'][id*='audio']"
+                );
+                if (audioUrlEl) log(`    子题 ${result.index + 1}: 通过 .question-part[${result.index}] 找到`);
+              }
+            }
+            
             if (!audioUrlEl) {
               log(`    子题 ${result.index + 1}: 未找到音频输入框 ${result.selector}`);
               continue;
@@ -3862,20 +3957,23 @@ async function runFill(questions, selectors, defaultAudioUrl, defaultImageUrl, d
         let currentAudioFileSel = null;
         let currentAudioUrlSel = null;
         
-        // 检测音频 URL 输入框
+        // 检测音频 URL 输入框（覆盖更多可能的选择器）
         const audioUrlInput = scope.querySelector(
           "#audioFileName, #audioFileName1, input.audioFileName, input[id^='audioFileName'], " +
-          "input[id*='audio'][type='text'], input[placeholder*='mp3'], input[placeholder*='音频']"
+          "input[id*='audio'][type='text'], input[placeholder*='mp3'], input[placeholder*='音频'], " +
+          "input[name*='audio'], input[id*='Audio'], .audio-input input[type='text']"
         );
         if (audioUrlInput) {
           currentAudioUrlSel = audioUrlInput.id ? `#${audioUrlInput.id}` : null;
           log(`  第 ${i + 1} 题：检测到音频URL输入框: ${currentAudioUrlSel}`);
         }
         
-        // 检测音频上传容器
+        // 检测音频上传容器（覆盖更多可能的选择器）
         const uploadContainer = scope.querySelector(
           "#audio_upload1, #audio_upload, div[id*='audio_upload'], .uploadify[id*='audio'], " +
-          "[id='audio_upload1'], [id='audio_upload'], [id*='audioUpload'], .audio-upload-wrap"
+          "[id='audio_upload1'], [id='audio_upload'], [id*='audioUpload'], .audio-upload-wrap, " +
+          ".uploadify, [class*='audio'][class*='upload'], [class*='upload'][class*='audio'], " +
+          ".file-upload-area, .upload-container, div[class*='uploadify']"
         );
         if (uploadContainer) {
           const fi = uploadContainer.querySelector("input[type='file']");
@@ -3883,6 +3981,24 @@ async function runFill(questions, selectors, defaultAudioUrl, defaultImageUrl, d
             currentAudioFileSel = fi.id ? `#${fi.id}` : "input[type='file']";
             log(`  第 ${i + 1} 题：检测到音频上传框: ${currentAudioFileSel}`);
           }
+        }
+        
+        // 如果还没找到，尝试使用初始检测的选择器
+        if (!currentAudioFileSel && !currentAudioUrlSel) {
+          if (audioFileSels.length > 0) currentAudioFileSel = audioFileSels[0];
+          if (audioUrlSels.length > 0) currentAudioUrlSel = audioUrlSels[0];
+          log(`  第 ${i + 1} 题：使用初始检测的选择器 - audioFile: ${currentAudioFileSel}, audioUrl: ${currentAudioUrlSel}`);
+        }
+        
+        // 打印更详细的调试信息
+        if (!currentAudioFileSel && !currentAudioUrlSel) {
+          log(`  第 ${i + 1} 题：未找到任何音频上传框！请检查页面结构`);
+          // 尝试列出 scope 内所有可能相关的元素
+          const allInputs = scope.querySelectorAll("input[type='file'], .uploadify, [id*='audio'], [class*='audio']");
+          log(`  第 ${i + 1} 题：scope内相关元素数量: ${allInputs.length}`);
+          allInputs.forEach((el, idx) => {
+            if (idx < 5) log(`    - ${el.tagName} id="${el.id}" class="${el.className.slice(0, 50)}"`);
+          });
         }
         
         if (currentAudioFileSel || currentAudioUrlSel) {

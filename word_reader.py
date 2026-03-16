@@ -842,3 +842,136 @@ def chunk_text(
         chunk = sep.join(blocks[i : i + questions_per_batch])
         chunks.append(chunk)
     return chunks
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PDF 文件读取支持
+# ─────────────────────────────────────────────────────────────────────────────
+
+def read_pdf_text(pdf_path: str) -> str:
+    """读取 PDF 全文（仅文字）。
+    
+    使用 pymupdf (fitz) 提取文本，保留段落结构。
+    """
+    try:
+        import fitz  # pymupdf
+    except ImportError:
+        raise ImportError("需要安装 pymupdf：pip install pymupdf")
+    
+    path = Path(pdf_path)
+    if not path.exists():
+        raise FileNotFoundError(f"PDF 文件不存在: {pdf_path}")
+    
+    doc = fitz.open(path)
+    parts = []
+    for page in doc:
+        text = page.get_text("text")
+        if text.strip():
+            parts.append(text.strip())
+    doc.close()
+    return "\n\n".join(parts)
+
+
+def extract_pdf_images(pdf_path: str) -> list:
+    """从 PDF 中提取图片，返回图片信息列表。
+    
+    每项包含：
+      page_index   - 所在页码（0-based）
+      image_bytes  - 图片字节
+      image_ext    - 扩展名（jpg/png）
+      image_index  - 全局顺序（0-based）
+    """
+    try:
+        import fitz  # pymupdf
+    except ImportError:
+        raise ImportError("需要安装 pymupdf：pip install pymupdf")
+    
+    path = Path(pdf_path)
+    if not path.exists():
+        raise FileNotFoundError(f"PDF 文件不存在: {pdf_path}")
+    
+    doc = fitz.open(path)
+    results = []
+    img_idx = 0
+    
+    for page_idx, page in enumerate(doc):
+        image_list = page.get_images(full=True)
+        for img_info in image_list:
+            xref = img_info[0]
+            try:
+                base_image = doc.extract_image(xref)
+                image_bytes = base_image["image"]
+                ext = base_image.get("ext", "png")
+                if ext == "jpeg":
+                    ext = "jpg"
+                
+                # 转换为浏览器兼容格式
+                if ext not in ("jpg", "png", "gif", "webp"):
+                    image_bytes, ext = _convert_to_web_image(image_bytes)
+                
+                results.append({
+                    "page_index": page_idx,
+                    "para_index": -1,
+                    "para_text": "",
+                    "prev_para_text": "",
+                    "option_label": None,
+                    "image_bytes": image_bytes,
+                    "image_ext": ext,
+                    "image_index": img_idx,
+                })
+                img_idx += 1
+            except Exception:
+                continue
+    
+    doc.close()
+    return results
+
+
+def render_pdf_pages_as_images(pdf_path: str, dpi: int = 150) -> list:
+    """将 PDF 每一页渲染为图片，用于 AI 视觉识别。
+    
+    Args:
+        pdf_path: PDF 文件路径
+        dpi: 渲染分辨率，默认 150（平衡清晰度和文件大小）
+    
+    Returns:
+        列表，每项包含：
+          page_index  - 页码（0-based）
+          image_bytes - JPEG 图片字节
+          image_ext   - 'jpg'
+    """
+    try:
+        import fitz  # pymupdf
+    except ImportError:
+        raise ImportError("需要安装 pymupdf：pip install pymupdf")
+    
+    path = Path(pdf_path)
+    if not path.exists():
+        raise FileNotFoundError(f"PDF 文件不存在: {pdf_path}")
+    
+    doc = fitz.open(path)
+    results = []
+    
+    # 计算缩放矩阵（72 是 PDF 默认 DPI）
+    zoom = dpi / 72
+    matrix = fitz.Matrix(zoom, zoom)
+    
+    for page_idx, page in enumerate(doc):
+        # 渲染页面为 pixmap
+        pix = page.get_pixmap(matrix=matrix)
+        
+        # 转换为 JPEG
+        import io
+        from PIL import Image
+        img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+        buf = io.BytesIO()
+        img.save(buf, format="JPEG", quality=85, optimize=True)
+        
+        results.append({
+            "page_index": page_idx,
+            "image_bytes": buf.getvalue(),
+            "image_ext": "jpg",
+        })
+    
+    doc.close()
+    return results

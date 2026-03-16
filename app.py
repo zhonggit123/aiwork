@@ -3,6 +3,7 @@
 可视化 Web 服务：上传 Word → AI 解析 → 表格展示/编辑 → 一键提交。
 启动：uvicorn app:app --reload --host 0.0.0.0 --port 8765
 """
+import asyncio
 import os
 import sys
 import tempfile
@@ -23,12 +24,16 @@ from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from word_reader import read_word_text, chunk_text, extract_word_images, extract_word_tables_as_images
+from word_reader import (
+    read_word_text, chunk_text, extract_word_images, extract_word_tables_as_images,
+    read_pdf_text, extract_pdf_images, render_pdf_pages_as_images,
+)
 from llm_extract import (
     extract_questions_from_word_chunks_async,
     classify_file_fast,
     parse_exam_with_answers,
     parse_single_file,
+    parse_pdf_with_images,
 )
 from submit_api import submit_all as submit_all_api
 
@@ -536,13 +541,14 @@ async def synthesize_tts(req: TtsRequest):
                 if not segments:
                     raise HTTPException(400, "对话文本解析后为空")
                 
-                audio_parts: list[bytes] = []
-                for seg in segments:
+                # 并行合成所有对话段落
+                async def _synth_youdao_seg(seg):
                     spk = female_speaker if seg["speaker"] == "female" else male_speaker
                     spd = female_speed if seg["speaker"] == "female" else male_speed
                     vol = female_volume if seg["speaker"] == "female" else male_volume
-                    part = await _synthesize_youdao(seg["text"], spk, spd, vol, app_key, app_secret)
-                    audio_parts.append(part)
+                    return await _synthesize_youdao(seg["text"], spk, spd, vol, app_key, app_secret)
+                
+                audio_parts = await asyncio.gather(*[_synth_youdao_seg(seg) for seg in segments])
                 combined = b"".join(audio_parts)
             else:
                 speaker = req.speaker or female_speaker
@@ -559,13 +565,14 @@ async def synthesize_tts(req: TtsRequest):
                 if not segments:
                     raise HTTPException(400, "对话文本解析后为空")
 
-                audio_parts: list[bytes] = []
-                for seg in segments:
+                # 并行合成所有对话段落
+                async def _synth_edge_seg(seg):
                     spk = female_speaker if seg["speaker"] == "female" else male_speaker
                     spd = female_speed if seg["speaker"] == "female" else male_speed
                     vol = female_volume if seg["speaker"] == "female" else male_volume
-                    part = await _synthesize_edge_tts(seg["text"], spk, spd, vol)
-                    audio_parts.append(part)
+                    return await _synthesize_edge_tts(seg["text"], spk, spd, vol)
+                
+                audio_parts = await asyncio.gather(*[_synth_edge_seg(seg) for seg in segments])
                 combined = b"".join(audio_parts)
             else:
                 speaker = req.speaker or female_speaker
@@ -592,16 +599,17 @@ async def synthesize_tts(req: TtsRequest):
                 if not segments:
                     raise HTTPException(400, "对话文本解析后为空")
                 
-                audio_parts: list[bytes] = []
-                for seg in segments:
+                # 并行合成所有对话段落
+                async def _synth_doubao_seg(seg):
                     spk = female_speaker if seg["speaker"] == "female" else male_speaker
                     spd = female_speed if seg["speaker"] == "female" else male_speed
                     vol = female_volume if seg["speaker"] == "female" else male_volume
                     ctx = female_context_texts if seg["speaker"] == "female" else male_context_texts
-                    part = await _synthesize_single(
+                    return await _synthesize_single(
                         seg["text"], spk, req.format, req.sample_rate, spd, vol, access_key, app_id, ctx
                     )
-                    audio_parts.append(part)
+                
+                audio_parts = await asyncio.gather(*[_synth_doubao_seg(seg) for seg in segments])
                 combined = b"".join(audio_parts)
             else:
                 speaker = req.speaker or female_speaker
@@ -664,6 +672,42 @@ async def _read_word_content_with_images(content: bytes) -> tuple:
     finally:
         Path(tmp).unlink(missing_ok=True)
     return text, images, tables
+
+
+async def _read_pdf_content_with_images(content: bytes) -> tuple:
+    """读取 PDF 文件内容（文字 + 图片 + 页面渲染图），异步，返回 (text, extracted_images, page_images)。"""
+    import asyncio
+
+    with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as fp:
+        fp.write(content)
+        tmp = fp.name
+    try:
+        text, images, pages = await asyncio.gather(
+            asyncio.to_thread(read_pdf_text, tmp),
+            asyncio.to_thread(extract_pdf_images, tmp),
+            asyncio.to_thread(render_pdf_pages_as_images, tmp),
+        )
+        # 将页面渲染图转换为与 Word 表格图片兼容的格式
+        table_images = []
+        for pg in pages:
+            table_images.append({
+                "table_index": pg["page_index"],
+                "image_bytes": pg["image_bytes"],
+                "image_ext": pg["image_ext"],
+                "first_cell": f"PDF 第 {pg['page_index'] + 1} 页",
+            })
+    finally:
+        Path(tmp).unlink(missing_ok=True)
+    return text, images, table_images
+
+
+async def _read_file_content_with_images(content: bytes, filename: str) -> tuple:
+    """根据文件类型读取内容，返回 (text, extracted_images, table_images)。"""
+    ext = (filename or "").lower().split(".")[-1] if filename else ""
+    if ext == "pdf":
+        return await _read_pdf_content_with_images(content)
+    else:
+        return await _read_word_content_with_images(content)
 
 
 async def _parse_one_file(
@@ -732,7 +776,7 @@ async def save_debug_page_html(body: DebugPageHtmlBody):
 
 @app.post("/api/parse-multiple")
 async def parse_word_multiple(
-    files: list[UploadFile] = File(..., description="多个 .docx 文件"),
+    files: list[UploadFile] = File(..., description="多个 Word (.docx/.doc) 或 PDF 文件"),
     field_structure: str | None = Form(None, description="页面字段结构 JSON"),
     expected_total: str | None = Form(None, description="录题页题目数量，用于约束大模型只提取对应题数"),
     page_structure: str | None = Form(None, description="录题页每题的题型/小题数等，JSON 数组，便于大模型精确对应"),
@@ -740,7 +784,7 @@ async def parse_word_multiple(
     reasoning_effort: str | None = Form(None, description="思考程度：minimal/low/medium/high，默认 medium"),
     debug: str | None = Form(None, description="传 1 或 true 时返回 debug_info（原文+prompt），便于调试"),
 ):
-    """上传多个 Word，智能识别文件类型并合并解析。
+    """上传多个 Word 或 PDF 文件，智能识别文件类型并合并解析。
     
     流程：
     1. 快速识别文件类型（根据文件名+内容特征，不调 LLM）
@@ -754,11 +798,11 @@ async def parse_word_multiple(
     import json as json_module
     
     if not files:
-        raise HTTPException(400, "请至少上传一个 .docx 文件")
+        raise HTTPException(400, "请至少上传一个文件")
 
-    valid = [f for f in files if f.filename and f.filename.lower().endswith((".docx", ".doc"))]
+    valid = [f for f in files if f.filename and f.filename.lower().endswith((".docx", ".doc", ".pdf"))]
     if not valid:
-        raise HTTPException(400, "未找到有效的 .docx 文件")
+        raise HTTPException(400, "未找到有效的 Word 或 PDF 文件")
 
     # 解析字段结构 JSON
     parsed_field_structure = None
@@ -804,10 +848,12 @@ async def parse_word_multiple(
     }
     print(f"[parse-multiple] 使用模型: {llm_params['model']}, 思考程度: {effort}")
 
-    # 1. 读取所有文件内容（文字 + 图片并行提取）
+    # 1. 读取所有文件内容（文字 + 图片并行提取，支持 Word 和 PDF）
     filenames = [f.filename for f in valid]
     contents = [await f.read() for f in valid]
-    text_and_images = await asyncio.gather(*[_read_word_content_with_images(c) for c in contents])
+    text_and_images = await asyncio.gather(*[
+        _read_file_content_with_images(c, fn) for c, fn in zip(contents, filenames)
+    ])
 
     # 生成本次解析的图片会话 ID，保存提取到的图片到临时目录
     session_id = str(uuid.uuid4())
@@ -845,16 +891,36 @@ async def parse_word_multiple(
 
     files_data = []
     for i in range(len(valid)):
-        text_i, _, _ = text_and_images[i]
+        text_i, imgs_i, tables_i = text_and_images[i]
+        ext_i = (filenames[i] or "").lower().split(".")[-1]
+        is_pdf = ext_i == "pdf"
+        # 对于 PDF，tables_i 实际上是渲染的页面图片（已按 page_index 排序）
+        page_images_i = tables_i if is_pdf else []
+        
+        # 判断 PDF 是否需要视觉识别：
+        # - 扫描件：文字极少（< 100 字符）→ 必须用视觉
+        # - 可提取文字的 PDF：直接用文字解析，省 AI 视觉 token
+        text_len = len((text_i or "").strip())
+        is_scanned_pdf = is_pdf and text_len < 100
+        
         # 快速识别文件类型（不调 LLM）
         file_info = classify_file_fast(filenames[i], text_i)
         files_data.append({
             "filename": filenames[i],
             "text": text_i,
             "content": contents[i],
+            "is_pdf": is_pdf,
+            "is_scanned_pdf": is_scanned_pdf,
+            "page_images": page_images_i,  # 保留页面图片，扫描件时使用
             **file_info,
         })
-        print(f"[parse-multiple] 文件 '{filenames[i]}' -> 类型: {file_info['file_type']}")
+        if is_pdf:
+            if is_scanned_pdf:
+                print(f"[parse-multiple] 文件 '{filenames[i]}' -> PDF 扫描件（文字 {text_len} 字符），将使用视觉识别（{len(page_images_i)} 页）")
+            else:
+                print(f"[parse-multiple] 文件 '{filenames[i]}' -> PDF（文字 {text_len} 字符），直接解析文字")
+        else:
+            print(f"[parse-multiple] 文件 '{filenames[i]}' -> 类型: {file_info['file_type']}")
 
     # 2. 分类文件
     exam_files = [f for f in files_data if f["file_type"] == "exam"]
@@ -865,10 +931,46 @@ async def parse_word_multiple(
 
     want_debug = (debug or "").strip().lower() in ("1", "true", "yes")
     debug_info = None
+    
+    # 检查是否有扫描件 PDF 需要视觉识别
+    scanned_pdfs = [f for f in files_data if f.get("is_scanned_pdf")]
 
     try:
         # 3. 根据文件组合选择解析策略
-        if len(combined_files) >= 1 and len(exam_files) == 0 and len(answer_files) == 0:
+        
+        # 特殊情况：扫描件 PDF → 使用视觉模型识别
+        if len(scanned_pdfs) > 0 and len(files_data) == len(scanned_pdfs):
+            print("[parse-multiple] 策略: PDF 扫描件视觉识别")
+            # 合并所有 PDF 的页面图片，保持文件顺序 + 页码顺序
+            all_page_images = []
+            all_text = []
+            page_offset = 0  # 用于多文件时的页码偏移，确保全局顺序
+            for f in scanned_pdfs:
+                all_text.append(f.get("text", ""))
+                file_pages = f.get("page_images", [])
+                # 按页码排序后添加，更新全局 page_index
+                sorted_pages = sorted(file_pages, key=lambda x: x.get("page_index", 0))
+                for pg in sorted_pages:
+                    pg_copy = dict(pg)
+                    pg_copy["page_index"] = page_offset + pg.get("page_index", 0)
+                    all_page_images.append(pg_copy)
+                page_offset += len(sorted_pages)
+            
+            combined_text = "\n\n".join(t for t in all_text if t.strip())
+            out = await parse_pdf_with_images(
+                combined_text,
+                all_page_images,
+                field_structure=parsed_field_structure,
+                paper_metadata=paper_metadata,
+                return_debug=want_debug,
+                **llm_params,
+            )
+            if want_debug:
+                questions, debug_info = out
+            else:
+                questions = out
+        
+        elif len(combined_files) >= 1 and len(exam_files) == 0 and len(answer_files) == 0:
             # 情况 AA：题目+答案+听力材料全在同一文件（内嵌答案格式如 (C)1.A. B. C.）
             print("[parse-multiple] 策略: 题答合并文件解析（内嵌答案）")
             # 多个 combined 文件时合并文本

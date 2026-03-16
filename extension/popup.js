@@ -334,7 +334,7 @@ restoreParseState();
   const effortEl = document.getElementById("reasoningEffort");
   if (effortEl) {
     const validEffort = ["minimal", "low", "medium", "high"];
-    const effort = validEffort.includes(savedEffort) ? savedEffort : "medium";
+    const effort = validEffort.includes(savedEffort) ? savedEffort : "high";  // 默认 high
     effortEl.value = effort;
     effortEl.addEventListener("change", () => {
       chrome.storage.sync.set({ reasoningEffort: effortEl.value });

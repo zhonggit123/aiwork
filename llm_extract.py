@@ -1299,3 +1299,96 @@ async def parse_single_file(
             "strategy": "single_file",
         }
     return questions
+
+
+async def parse_pdf_with_images(
+    text: str,
+    page_images: List[Dict[str, Any]],
+    *,
+    base_url: str,
+    api_key: str,
+    model: str,
+    field_structure: List[Dict[str, Any]] | None = None,
+    paper_metadata: Dict[str, Any] | None = None,
+    return_debug: bool = False,
+    reasoning_effort: str = "medium",
+):
+    """解析 PDF 文件：将提取的文字和页面图片一起发送给视觉模型。
+    
+    对于扫描件 PDF（文字为空），使用页面图片让 AI 识别内容。
+    page_images: [{"page_index": 0, "image_bytes": bytes, "image_ext": "jpg"}, ...]
+    """
+    import base64
+    
+    key = _resolve_api_key(api_key, base_url)
+    if not key:
+        raise ValueError("未配置 api_key")
+    
+    system_content = _system_prompt_with_total(SINGLE_FILE_PROMPT, paper_metadata)
+    
+    # 构建消息内容：文本 + 图片
+    user_content_parts = []
+    
+    # 如果有提取到的文字，先添加文字
+    if text and text.strip():
+        user_content_parts.append({
+            "type": "text",
+            "text": f"以下是从 PDF 提取的文字内容：\n\n{_encode_star(text)}"
+        })
+    
+    # 添加 PDF 页面图片（按页码顺序）
+    if page_images:
+        # 按页码排序
+        sorted_pages = sorted(page_images, key=lambda x: x.get("page_index", 0))
+        
+        # 添加图片说明
+        user_content_parts.append({
+            "type": "text",
+            "text": f"\n\n以下是 PDF 的 {len(sorted_pages)} 页图片，请识别图片中的所有题目内容并按要求输出 JSON："
+        })
+        
+        for pg in sorted_pages:
+            img_bytes = pg.get("image_bytes", b"")
+            img_ext = pg.get("image_ext", "jpg")
+            if not img_bytes:
+                continue
+            
+            # 转为 base64
+            b64_data = base64.b64encode(img_bytes).decode("utf-8")
+            mime_type = "image/jpeg" if img_ext in ("jpg", "jpeg") else f"image/{img_ext}"
+            
+            user_content_parts.append({
+                "type": "image_url",
+                "image_url": {
+                    "url": f"data:{mime_type};base64,{b64_data}"
+                }
+            })
+    
+    # 如果没有任何内容
+    if not user_content_parts:
+        raise ValueError("PDF 文件无内容（无文字也无图片）")
+    
+    client = AsyncOpenAI(base_url=base_url, api_key=key)
+    kwargs = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": system_content},
+            {"role": "user", "content": user_content_parts}
+        ],
+        "temperature": 0.1,
+        "max_tokens": 16000,
+    }
+    if _is_volc(base_url):
+        kwargs["extra_body"] = _volc_extra_body(reasoning_effort)
+    
+    resp = await client.chat.completions.create(**kwargs)
+    content = resp.choices[0].message.content or ""
+    questions = _normalize_questions(_decode_star_questions(extract_json_from_response(content)))
+    
+    if return_debug:
+        return questions, {
+            "system_prompt": system_content,
+            "user_content": f"[文本: {len(text)} 字符, 图片: {len(page_images)} 页]",
+            "strategy": "pdf_with_images",
+        }
+    return questions

@@ -535,7 +535,7 @@ async function handleParse(filesData) {
       ? selectedModel
       : "doubao-seed-2-0-pro-260215";
     formData.append("model_override", modelToUse);
-    const effort = ["minimal", "low", "medium", "high"].includes(reasoningEffort) ? reasoningEffort : "medium";
+    const effort = ["minimal", "low", "medium", "high"].includes(reasoningEffort) ? reasoningEffort : "high";  // 默认 high
     formData.append("reasoning_effort", effort);
 
     const r = await fetch(BACKEND + "/api/parse-multiple", {
