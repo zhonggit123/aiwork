@@ -38,23 +38,36 @@
 <body class="min-h-screen text-slate-200 selection:bg-indigo-500/30">
 
   <!-- 顶部导航 -->
-  <nav class="sticky top-0 z-50 glass-panel border-b border-white/10">
+  <nav class="sticky top-0 z-50 glass-panel border-b border-white/10 shadow-lg shadow-indigo-500/5">
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-      <div class="flex items-center justify-between h-16">
-        <div class="flex items-center gap-3">
-          <svg class="w-8 h-8 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
-          </svg>
-          <span class="font-bold text-xl tracking-wide bg-clip-text text-transparent bg-gradient-to-r from-indigo-400 to-cyan-400">
-            AI 题库录入
-          </span>
+      <div class="flex items-center justify-between h-20">
+        <!-- 左侧 Logo -->
+        <div class="flex items-center gap-4 group cursor-default">
+          <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-cyan-400 p-0.5 shadow-inner transition-transform group-hover:scale-105">
+            <div class="w-full h-full bg-slate-900 rounded-[10px] flex items-center justify-center">
+              <svg class="w-6 h-6 text-cyan-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
+              </svg>
+            </div>
+          </div>
+          <div class="flex flex-col">
+            <span class="font-extrabold text-xl tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-white to-slate-400">
+              AI 题库录入
+            </span>
+            <span class="text-[10px] text-indigo-400 font-mono tracking-widest uppercase">Smart Form Filler</span>
+          </div>
         </div>
-        <div>
-          <a href="https://github.com/boyzhong123/aiwork" target="_blank" class="text-slate-300 hover:text-white transition flex items-center gap-2">
-            <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+        
+        <!-- 右侧链接 -->
+        <div class="flex items-center gap-6">
+          <a href="#tutorial" class="text-sm font-medium text-slate-300 hover:text-white transition-colors hidden sm:block">使用教程</a>
+          <a href="#features" class="text-sm font-medium text-slate-300 hover:text-white transition-colors hidden sm:block">核心功能</a>
+          <div class="h-5 w-px bg-slate-700 hidden sm:block"></div>
+          <a href="https://github.com/boyzhong123/aiwork" target="_blank" class="group flex items-center gap-2 px-4 py-2 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 transition-all">
+            <svg class="w-5 h-5 text-slate-300 group-hover:text-white transition-colors" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
               <path fill-rule="evenodd" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z" clip-rule="evenodd" />
             </svg>
-            <span class="hidden sm:inline">GitHub</span>
+            <span class="text-sm font-semibold text-slate-300 group-hover:text-white transition-colors">GitHub</span>
           </a>
         </div>
       </div>
@@ -137,22 +150,41 @@
             <div class="flex gap-4">
               <div class="flex-shrink-0 w-8 h-8 rounded-full bg-indigo-500/20 border border-indigo-500/50 flex items-center justify-center text-indigo-400 font-bold">1</div>
               <div>
-                <h4 class="text-lg font-bold mb-1">本地解析服务 (Python/FastAPI)</h4>
-                <p class="text-slate-400 text-sm">使用 <code class="bg-white/10 px-1 rounded">python-docx</code> 提取文本，图片及表格渲染。对接大模型进行 JSON 结构化抽取，同时提供本地 TTS 代理与图片文件代理服务。</p>
+                <h4 class="text-lg font-bold mb-1 text-indigo-300">本地解析服务 (Python/FastAPI)</h4>
+                <div class="text-slate-400 text-sm space-y-2">
+                  <p>基于 Python 的底层解析引擎：</p>
+                  <ul class="list-disc pl-4 space-y-1 text-slate-400/90">
+                    <li><strong>文档精细处理</strong>：使用 <code>python-docx</code> 提取段落文本，自动处理跨行/列的复杂表格并将其高清渲染为图片，同时提取内嵌的所有图片资源。</li>
+                    <li><strong>大模型结构化抽取</strong>：通过自定义的 Prompt 对接各种主流大语言模型（OpenAI 格式支持），将杂乱文本转化为标准化的试题 JSON 数组。</li>
+                    <li><strong>听力语音全自动生成</strong>：内置豆包、有道、微软等 TTS 引擎的代理接口，可智能剥离文本中的音标字符，精准处理中英混合及多角色对话场景。</li>
+                  </ul>
+                </div>
               </div>
             </div>
             <div class="flex gap-4">
               <div class="flex-shrink-0 w-8 h-8 rounded-full bg-indigo-500/20 border border-indigo-500/50 flex items-center justify-center text-indigo-400 font-bold">2</div>
               <div>
-                <h4 class="text-lg font-bold mb-1">浏览器扩展 (Manifest V3)</h4>
-                <p class="text-slate-400 text-sm">提供用户交互面板（配置模型、TTS音色等），负责与本地服务器通信。通过 Content Script 深度分析目标录题网页 DOM 树，精准匹配题干、选项、解析及音频/图片上传域。</p>
+                <h4 class="text-lg font-bold mb-1 text-indigo-300">浏览器扩展 (Manifest V3)</h4>
+                <div class="text-slate-400 text-sm space-y-2">
+                  <p>连接本地解析端和目标录入系统的桥梁：</p>
+                  <ul class="list-disc pl-4 space-y-1 text-slate-400/90">
+                    <li><strong>动态表单嗅探</strong>：Content Script 注入到各大在线题库平台，通过启发式正则与 DOM 分析，精准锁定"题干"、"选项"、"解析"等编辑区域（兼容 UEditor 等各种富文本编辑器）。</li>
+                    <li><strong>现代化控制台</strong>：基于 Tailwind CSS 构建的扩展 Popup 界面，便于快捷配置 API 秘钥及各项生成参数（如自定义发音人及音量等）。</li>
+                  </ul>
+                </div>
               </div>
             </div>
             <div class="flex gap-4">
               <div class="flex-shrink-0 w-8 h-8 rounded-full bg-indigo-500/20 border border-indigo-500/50 flex items-center justify-center text-indigo-400 font-bold">3</div>
               <div>
-                <h4 class="text-lg font-bold mb-1">多模态协同填充</h4>
-                <p class="text-slate-400 text-sm">将本地抽取的图片/表格直接转为 File 对象并派发事件触发上传，异步合成 TTS 音频并注入页面，富文本编辑器通过脚本劫持或 API 直接写入 HTML。</p>
+                <h4 class="text-lg font-bold mb-1 text-indigo-300">多模态协同自动填充</h4>
+                <div class="text-slate-400 text-sm space-y-2">
+                  <p>实现“所见即所得”的无感录入体验：</p>
+                  <ul class="list-disc pl-4 space-y-1 text-slate-400/90">
+                    <li><strong>附件劫持上传</strong>：自动将本地处理好的图片与表格转换回前端的 File 对象，模拟真实用户操作，精准派发给目标网站的图片/音频上传框。</li>
+                    <li><strong>复杂题型自适应</strong>：针对带子题的复合题型（如阅读理解、完形填空、听力篇章），按层级自动切分并注入对应的题目空位及音频节点，释放双手。</li>
+                  </ul>
+                </div>
               </div>
             </div>
           </div>
@@ -244,42 +276,50 @@
     </div>
   </section>
 
-  <!-- 隔离旧版解析工具区 -->
+  <!-- 隔离旧版解析工具区 (现在可折叠) -->
   <section class="py-16 bg-black/30 border-t border-white/5">
-    <div class="text-center mb-8">
-      <h2 class="text-2xl font-bold text-slate-400">独立调试 / 备用解析工具</h2>
-      <p class="text-sm text-slate-500 mt-2">如果在某些系统中无法使用插件，你也可以在此处单独解析 Word，并手动复制 JSON。</p>
-    </div>
-    <div class="legacy-wrap">
-      <div class="upload" id="uploadSection">
-        <label class="file-label">
-          <input type="file" id="file" accept=".docx,.doc" multiple />
-          <span class="file-btn">选择 Word 文件并解析</span>
-        </label>
-        <p class="drop-hint">或将 .docx 文件拖拽到此处（可多选）</p>
-        <p id="parse-status" class="status"></p>
+    <div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="text-center mb-8">
+        <h2 class="text-2xl font-bold text-slate-400">开发者工具 / 备用解析</h2>
+        <p class="text-sm text-slate-500 mt-2">当浏览器插件无法自动填表时，可使用此备用工具单独解析 Word 并复制 JSON。</p>
+        
+        <button id="toggleLegacyBtn" class="mt-6 px-6 py-2 rounded-full border border-white/10 hover:bg-white/5 text-sm font-medium text-slate-300 transition flex items-center gap-2 mx-auto">
+          <span>显示独立解析工具</span>
+          <svg class="w-4 h-4 transition-transform duration-300" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg>
+        </button>
       </div>
+      
+      <div id="legacyToolArea" class="hidden legacy-wrap">
+        <div class="upload" id="uploadSection">
+          <label class="file-label">
+            <input type="file" id="file" accept=".docx,.doc" multiple />
+            <span class="file-btn">选择 Word 文件并解析</span>
+          </label>
+          <p class="drop-hint">或将 .docx 文件拖拽到此处（可多选）</p>
+          <p id="parse-status" class="status"></p>
+        </div>
 
-      <div class="actions" id="actions" hidden>
-        <button type="button" id="copy-json">复制 JSON</button>
-        <button type="button" id="submit-api" class="primary">一键提交到系统</button>
-        <span id="submit-status" class="status"></span>
-      </div>
+        <div class="actions" id="actions" hidden>
+          <button type="button" id="copy-json">复制 JSON</button>
+          <button type="button" id="submit-api" class="primary">一键提交到系统</button>
+          <span id="submit-status" class="status"></span>
+        </div>
 
-      <div class="table-wrap" id="table-wrap" hidden>
-        <table>
-          <thead>
-            <tr>
-              <th>#</th>
-              <th>题型</th>
-              <th>题干</th>
-              <th>选项</th>
-              <th>答案</th>
-              <th>解析</th>
-            </tr>
-          </thead>
-          <tbody id="tbody"></tbody>
-        </table>
+        <div class="table-wrap" id="table-wrap" hidden>
+          <table>
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>题型</th>
+                <th>题干</th>
+                <th>选项</th>
+                <th>答案</th>
+                <th>解析</th>
+              </tr>
+            </thead>
+            <tbody id="tbody"></tbody>
+          </table>
+        </div>
       </div>
     </div>
   </section>
@@ -289,5 +329,23 @@
   </footer>
 
   <script src="/static/app.js"></script>
+  <script>
+    // 折叠展开逻辑
+    document.getElementById('toggleLegacyBtn').addEventListener('click', function() {
+      const area = document.getElementById('legacyToolArea');
+      const icon = this.querySelector('svg');
+      const text = this.querySelector('span');
+      
+      if (area.classList.contains('hidden')) {
+        area.classList.remove('hidden');
+        icon.classList.add('rotate-180');
+        text.textContent = '隐藏独立解析工具';
+      } else {
+        area.classList.add('hidden');
+        icon.classList.remove('rotate-180');
+        text.textContent = '显示独立解析工具';
+      }
+    });
+  </script>
 </body>
 </html>
