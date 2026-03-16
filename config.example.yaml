@@ -50,6 +50,22 @@ word:
 tts:
   access_key: ""   # 火山引擎 TTS API 密钥，也可用环境变量 DOUBAO_TTS_ACCESS_KEY
   app_id: ""       # 火山引擎应用 ID，也可用环境变量 DOUBAO_TTS_APP_ID
-  # 音色 ID（支持 moon/mars/uranus 系列）
+  # 音色 ID（支持 moon/mars/uranus 系列，S_ 开头为声音复刻音色）
   male_speaker: "zh_male_wennuanahu_moon_bigtts"      # 男声（用于 M: / A: 标记的对话）
   female_speaker: "zh_female_wanwanxiaohe_moon_bigtts"  # 女声（用于 W: / Q: 标记的对话）
+
+# TTS 语音合成（有道智云）
+# 有道智云 TTS API，支持多种中英文音色
+youdao_tts:
+  app_key: ""      # 有道智云应用 ID，也可用环境变量 YOUDAO_TTS_APP_KEY
+  app_secret: ""   # 有道智云应用密钥，也可用环境变量 YOUDAO_TTS_APP_SECRET
+  # 音色 ID（参考 https://ai.youdao.com/DOCSIRMA/html/tts/api/yyhc/index.html）
+  male_speaker: "youxiaozhi"    # 男声
+  female_speaker: "youxiaoqin"  # 女声
+
+# TTS 语音合成（微软 Edge TTS）
+# 免费在线语音合成，无需 API 密钥，支持 400+ 语音
+edge_tts:
+  # 音色 ID（参考 https://github.com/rany2/edge-tts 或运行 edge-tts --list-voices）
+  male_speaker: "en-US-GuyNeural"              # 男声（Guy 英文美式）
+  female_speaker: "en-US-AvaMultilingualNeural" # 女声（Ava 多语言）

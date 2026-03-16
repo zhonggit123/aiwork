@@ -37,10 +37,10 @@
   --gray-900: #111827;
 
   /* 阴影 */
-  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.04);
-  --shadow: 0 4px 12px -2px rgb(17 24 39 / 0.06), 0 2px 6px -2px rgb(0 0 0 / 0.04);
-  --shadow-hover: 0 8px 16px -4px rgb(17 24 39 / 0.1);
-  --shadow-lg: 0 8px 20px -4px rgb(17 24 39 / 0.08), 0 4px 8px -2px rgb(0 0 0 / 0.04);
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.03);
+  --shadow: 0 4px 12px -2px rgb(0 0 0 / 0.05), 0 2px 6px -2px rgb(0 0 0 / 0.03);
+  --shadow-hover: 0 8px 16px -4px rgb(0 0 0 / 0.08);
+  --shadow-lg: 0 12px 24px -4px rgb(0 0 0 / 0.08), 0 4px 8px -2px rgb(0 0 0 / 0.04);
 
   /* 圆角 */
   --radius: 12px;
@@ -174,12 +174,12 @@ header {
   max-height: 420px;
   background: #fff;
   border: 1px solid var(--gray-200);
-  border-radius: 10px;
-  box-shadow: 0 8px 24px rgba(0,0,0,0.15), 0 2px 8px rgba(0,0,0,0.1);
+  border-radius: 12px;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
   z-index: 200;
   overflow-y: auto;
   overflow-x: hidden;
-  animation: dropdownIn 0.15s ease;
+  animation: dropdownIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .settings-dropdown::-webkit-scrollbar {
@@ -197,12 +197,13 @@ header {
 }
 
 @keyframes dropdownIn {
-  from { opacity: 0; transform: translateY(-6px); }
-  to   { opacity: 1; transform: translateY(0); }
+  from { opacity: 0; transform: translateY(-8px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
 }
 
 .settings-section {
-  padding: 10px 14px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--gray-100);
 }
 
 .settings-section-header {
@@ -305,31 +306,47 @@ header {
 
 .settings-input {
   width: 100%;
-  font-size: 12px;
-  padding: 6px 8px;
+  font-size: 13px;
+  padding: 8px 12px;
   border: 1px solid var(--gray-200);
-  border-radius: 6px;
-  color: var(--gray-700);
+  border-radius: 8px;
+  color: var(--gray-900);
+  background: var(--gray-50);
   outline: none;
   box-sizing: border-box;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 .settings-input:focus {
-  border-color: var(--gray-400);
+  border-color: var(--brand-green);
+  background: #ffffff;
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.1);
 }
 
 .settings-select {
   width: 100%;
-  font-size: 12px;
-  padding: 6px 8px;
+  font-size: 13px;
+  padding: 8px 12px;
   border: 1px solid var(--gray-200);
-  border-radius: 6px;
-  color: var(--gray-700);
+  border-radius: 8px;
+  color: var(--gray-900);
+  background: var(--gray-50);
   outline: none;
   box-sizing: border-box;
-  background: #fff;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  cursor: pointer;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%236b7280'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+  background-size: 16px;
 }
 .settings-select:focus {
-  border-color: var(--gray-400);
+  border-color: var(--brand-green);
+  background: #ffffff;
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.1);
+}
+.settings-select:hover {
+  background-color: var(--gray-100);
 }
 
 .settings-hint {
@@ -344,6 +361,8 @@ header {
   align-items: center;
   gap: 8px;
   margin-bottom: 8px;
+  max-width: 100%;
+  overflow: hidden;
 }
 .settings-label {
   font-size: 12px;
@@ -353,16 +372,33 @@ header {
 }
 .settings-select-sm {
   flex: 1;
-  font-size: 11px;
-  padding: 4px 6px;
+  min-width: 0;
+  max-width: 100%;
+  font-size: 13px;
+  padding: 6px 24px 6px 8px;
   border: 1px solid var(--gray-200);
-  border-radius: 5px;
-  color: var(--gray-700);
+  border-radius: 6px;
+  color: var(--gray-900);
+  background: var(--gray-50);
   outline: none;
-  background: #fff;
+  box-sizing: border-box;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%236b7280'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 6px center;
+  background-size: 14px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .settings-select-sm:focus {
-  border-color: var(--gray-400);
+  border-color: var(--brand-green);
+  background: #ffffff;
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.1);
+}
+.settings-select-sm:hover {
+  background-color: var(--gray-100);
 }
 .settings-range {
   flex: 1;
@@ -431,22 +467,45 @@ header {
   color: #fff;
 }
 .settings-input-sm {
-  width: 60px;
-  font-size: 12px;
-  padding: 4px 6px;
+  width: 64px;
+  font-size: 13px;
+  padding: 6px 8px;
   border: 1px solid var(--gray-200);
-  border-radius: 5px;
-  color: var(--gray-700);
+  border-radius: 6px;
+  color: var(--gray-900);
+  background: var(--gray-50);
   outline: none;
   text-align: center;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 .settings-input-sm:focus {
   border-color: var(--brand-green);
+  background: #ffffff;
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.1);
 }
 .settings-unit {
   font-size: 11px;
   color: var(--gray-500);
   margin-left: 2px;
+}
+.settings-textarea {
+  width: 100%;
+  font-size: 12px;
+  padding: 8px 10px;
+  border: 1px solid var(--gray-200);
+  border-radius: 6px;
+  color: var(--gray-700);
+  outline: none;
+  resize: vertical;
+  min-height: 60px;
+  line-height: 1.5;
+  font-family: inherit;
+}
+.settings-textarea:focus {
+  border-color: var(--brand-green);
+}
+.settings-textarea::placeholder {
+  color: var(--gray-400);
 }
 
 /* TTS 试听弹窗 */
@@ -464,66 +523,73 @@ header {
 .modal-backdrop {
   position: absolute;
   inset: 0;
-  background: rgba(0, 0, 0, 0.5);
+  background: rgba(17, 24, 39, 0.6);
+  backdrop-filter: blur(2px);
 }
 .modal-content {
   position: relative;
-  background: #fff;
-  border-radius: 12px;
+  background: #ffffff;
+  border-radius: 16px;
   width: 320px;
   max-width: 90%;
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
-  animation: modalSlideIn 0.2s ease-out;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+  animation: modalSlideIn 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  border: 1px solid rgba(0,0,0,0.05);
 }
 @keyframes modalSlideIn {
-  from { transform: translateY(-20px); opacity: 0; }
-  to { transform: translateY(0); opacity: 1; }
+  from { transform: translateY(10px) scale(0.98); opacity: 0; }
+  to { transform: translateY(0) scale(1); opacity: 1; }
 }
 .modal-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 14px 16px;
+  padding: 16px 20px;
   border-bottom: 1px solid var(--gray-100);
 }
 .modal-title {
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 600;
-  color: var(--gray-800);
+  color: var(--gray-900);
 }
 .modal-close {
-  width: 24px;
-  height: 24px;
+  width: 28px;
+  height: 28px;
   border: none;
   background: transparent;
-  font-size: 18px;
+  font-size: 20px;
   color: var(--gray-400);
   cursor: pointer;
-  border-radius: 4px;
+  border-radius: 6px;
   display: flex;
   align-items: center;
   justify-content: center;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 .modal-close:hover {
   background: var(--gray-100);
-  color: var(--gray-600);
+  color: var(--gray-900);
 }
 .modal-body {
-  padding: 16px;
+  padding: 20px;
 }
 .modal-textarea {
   width: 100%;
   font-size: 13px;
-  padding: 10px;
+  padding: 12px;
   border: 1px solid var(--gray-200);
   border-radius: 8px;
   resize: vertical;
   outline: none;
   font-family: inherit;
   line-height: 1.5;
+  background: var(--gray-50);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 .modal-textarea:focus {
   border-color: var(--brand-green);
+  background: #ffffff;
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.1);
 }
 .modal-info {
   margin-top: 10px;
@@ -1084,7 +1150,7 @@ main {
   font-weight: 500;
   font-size: 13px;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   border: 1px solid transparent;
   gap: 6px;
 }
@@ -1092,23 +1158,32 @@ main {
 .btn-primary {
   background: #ffffff;
   color: var(--gray-800);
-  border-color: var(--gray-300);
+  border-color: var(--gray-200);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
 }
 
 .btn-primary:hover {
   background: var(--gray-50);
-  border-color: var(--gray-400);
+  border-color: var(--gray-300);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.06);
 }
 
 .btn-brand {
   background: var(--brand-green);
   color: #fff;
   border-color: var(--brand-green);
+  box-shadow: 0 1px 2px rgba(16, 185, 129, 0.2);
 }
 
 .btn-brand:hover {
   background: #059669;
   border-color: #059669;
+  box-shadow: 0 2px 4px rgba(16, 185, 129, 0.3);
+  transform: translateY(-1px);
+}
+
+.btn-brand:active {
+  transform: translateY(0);
 }
 
 .btn-full {
@@ -1738,8 +1813,57 @@ input[type="text"]:focus {
 
 /* ── TTS 合成弹窗样式 ─────────────────────────────────────────── */
 .modal-content-lg {
-  width: 420px;
-  max-width: 95vw;
+  width: 380px;
+  max-width: 90vw;
+  max-height: 85vh;
+  overflow-y: auto;
+}
+
+.modal-content-lg .modal-body {
+  max-height: 50vh;
+  overflow-y: auto;
+}
+
+.modal-content-lg .modal-textarea {
+  max-height: 25vh;
+}
+
+/* TTS 当前设置信息栏 */
+.tts-current-info {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  margin-bottom: 10px;
+  background: linear-gradient(135deg, var(--gray-50) 0%, #f0f9ff 100%);
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  color: var(--gray-700);
+}
+
+.tts-info-label {
+  color: var(--gray-500);
+  font-weight: 500;
+}
+
+.tts-info-provider {
+  font-weight: 600;
+  color: var(--brand);
+  background: var(--brand-light);
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+}
+
+.tts-info-sep {
+  color: var(--gray-300);
+}
+
+.tts-info-voice {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
 }
 
 .modal-hint {
@@ -1768,6 +1892,249 @@ input[type="text"]:focus {
 .modal-audio {
   width: 100%;
   height: 36px;
+}
+
+/* TTS 当前设置信息 */
+.tts-current-info {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background: linear-gradient(135deg, var(--gray-50) 0%, #f0f9ff 100%);
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius-sm);
+  margin-bottom: 8px;
+  font-size: 11px;
+  flex-wrap: wrap;
+  line-height: 1.4;
+}
+
+.tts-info-label {
+  color: var(--gray-500);
+  font-weight: 500;
+}
+
+.tts-info-provider {
+  color: var(--brand);
+  font-weight: 600;
+  background: var(--brand-light);
+  padding: 1px 6px;
+  border-radius: 8px;
+  font-size: 10px;
+}
+
+.tts-info-sep {
+  color: var(--gray-300);
+}
+
+.tts-info-voice {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--gray-700);
+}
+
+/* 在新标签打开设置按钮 */
+.btn-sm {
+  padding: 6px 10px;
+  font-size: 12px;
+}
+
+.btn-full {
+  width: 100%;
+  justify-content: center;
+}
+
+/* 新标签设置模式 */
+/* ═══════════════════════════════════════════════════════════════════════════
+   新标签页设置模式
+   ═══════════════════════════════════════════════════════════════════════════ */
+body.settings-tab-mode {
+  width: 100% !important;
+  height: auto !important;
+  min-height: 100vh !important;
+  max-height: none !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  background: #fafafa !important;
+  padding: 40px 20px !important;
+}
+
+/* 完全隐藏原有 header, main, footer 内容 */
+body.settings-tab-mode > header {
+  display: block !important;
+  position: static !important;
+  width: 100% !important;
+  max-width: 800px !important;
+  margin: 0 auto !important;
+  padding: 0 !important;
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  height: auto !important;
+}
+
+body.settings-tab-mode > header > .header-tabs,
+body.settings-tab-mode > header > .header-actions {
+  display: none !important;
+}
+
+body.settings-tab-mode > main,
+body.settings-tab-mode > footer {
+  display: none !important;
+}
+
+/* 设置下拉框 - 强制显示并重置布局 */
+body.settings-tab-mode .settings-dropdown,
+body.settings-tab-mode .settings-dropdown.hidden {
+  position: static !important;
+  display: block !important;
+  width: 100% !important;
+  max-width: 800px !important;
+  max-height: none !important;
+  overflow: visible !important;
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+  margin: 0 auto !important;
+  top: auto !important;
+  right: auto !important;
+  left: auto !important;
+}
+
+/* 隐藏"在新标签打开"按钮所在的分区 */
+body.settings-tab-mode .settings-section:first-child {
+  display: none !important;
+}
+
+/* 每个设置分区 - 白色卡片样式 */
+body.settings-tab-mode .settings-section {
+  background: #ffffff !important;
+  border: 1px solid rgba(0, 0, 0, 0.05) !important;
+  border-radius: 12px !important;
+  padding: 28px !important;
+  margin-bottom: 24px !important;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.02), 0 2px 4px -2px rgba(0, 0, 0, 0.02) !important;
+  transition: box-shadow 0.2s ease !important;
+}
+
+body.settings-tab-mode .settings-section:hover {
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.03), 0 4px 6px -4px rgba(0, 0, 0, 0.02) !important;
+}
+
+body.settings-tab-mode .settings-section-title {
+  font-size: 16px !important;
+  font-weight: 600 !important;
+  margin-bottom: 24px !important;
+  color: #111827 !important;
+  display: flex !important;
+  align-items: center !important;
+}
+
+body.settings-tab-mode .settings-divider {
+  display: none !important;
+}
+
+/* 子分区样式 */
+body.settings-tab-mode .settings-subsection {
+  background: #f9fafb !important;
+  border: 1px solid #f3f4f6 !important;
+  border-radius: 8px !important;
+  padding: 20px !important;
+  margin-top: 20px !important;
+}
+
+body.settings-tab-mode .settings-subsection-title {
+  font-size: 14px !important;
+  font-weight: 600 !important;
+  color: #374151 !important;
+  margin-bottom: 16px !important;
+}
+
+body.settings-tab-mode .settings-hint {
+  font-size: 12px !important;
+  color: #888 !important;
+  margin-top: 8px !important;
+}
+
+body.settings-tab-mode .settings-row {
+  margin-bottom: 16px !important;
+}
+
+body.settings-tab-mode .settings-label {
+  font-size: 14px !important;
+  color: #333 !important;
+  font-weight: 500 !important;
+}
+
+body.settings-tab-mode .settings-select,
+body.settings-tab-mode .settings-select-sm {
+  font-size: 14px !important;
+  border-radius: 8px !important;
+  padding: 10px 14px !important;
+  border: 1px solid #e5e7eb !important;
+  background-color: #f9fafb !important;
+  transition: all 0.2s ease !important;
+  color: #111827 !important;
+}
+body.settings-tab-mode .settings-select:focus,
+body.settings-tab-mode .settings-select-sm:focus {
+  background-color: #ffffff !important;
+  border-color: var(--brand-green) !important;
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.1) !important;
+  outline: none !important;
+}
+
+body.settings-tab-mode .settings-input,
+body.settings-tab-mode .settings-input-sm {
+  font-size: 14px !important;
+  border-radius: 8px !important;
+  padding: 10px 14px !important;
+  border: 1px solid #e5e7eb !important;
+  background-color: #f9fafb !important;
+  transition: all 0.2s ease !important;
+  color: #111827 !important;
+}
+body.settings-tab-mode .settings-input:focus,
+body.settings-tab-mode .settings-input-sm:focus {
+  background-color: #ffffff !important;
+  border-color: var(--brand-green) !important;
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.1) !important;
+  outline: none !important;
+}
+
+body.settings-tab-mode .settings-textarea {
+  font-size: 14px !important;
+  border-radius: 8px !important;
+  padding: 12px 14px !important;
+  border: 1px solid #e5e7eb !important;
+  background-color: #f9fafb !important;
+  transition: all 0.2s ease !important;
+  color: #111827 !important;
+}
+body.settings-tab-mode .settings-textarea:focus {
+  background-color: #ffffff !important;
+  border-color: var(--brand-green) !important;
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.1) !important;
+  outline: none !important;
+}
+
+body.settings-tab-mode .settings-radio-item,
+body.settings-tab-mode .settings-toggle-item {
+  padding: 8px 0 !important;
+  font-size: 14px !important;
+}
+
+body.settings-tab-mode .settings-nav-item {
+  padding: 12px 0 !important;
+  font-size: 14px !important;
+}
+
+body.settings-tab-mode .btn {
+  border-radius: 6px !important;
+  padding: 8px 16px !important;
+  font-size: 14px !important;
 }
 
 /* 侧边栏按钮样式 */

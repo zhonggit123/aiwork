@@ -24,3 +24,6 @@ Pillow>=10.0.0
 
 # JSON 修复（LLM 输出容错）
 json-repair>=0.7.0
+
+# 微软 Edge TTS（免费在线语音合成）
+edge-tts>=6.1.0

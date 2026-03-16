@@ -289,13 +289,21 @@ restoreParseState();
     e.stopPropagation();
     dropdown.classList.contains("hidden") ? openDropdown() : closeDropdown();
   });
-  // 点击面板外关闭
+  // 点击面板外关闭（仅在非新标签模式下）
+  const isSettingsTab = window.location.search.includes("tab=settings");
   document.addEventListener("click", (e) => {
-    if (!dropdown.classList.contains("hidden") && !dropdown.contains(e.target)) {
+    if (!isSettingsTab && !dropdown.classList.contains("hidden") && !dropdown.contains(e.target)) {
       closeDropdown();
     }
   });
   dropdown.addEventListener("click", (e) => e.stopPropagation());
+
+  // 如果是从"在新标签打开设置"进入，自动展开设置面板
+  if (isSettingsTab) {
+    openDropdown();
+    // 隐藏其他非设置相关的内容，让设置面板更突出
+    document.body.classList.add("settings-tab-mode");
+  }
 
   // ── 模型选择 ──────────────────────────────────────────────
   const { 
@@ -395,19 +403,117 @@ restoreParseState();
 
   // TTS 默认值
   const TTS_DEFAULTS = {
-    femaleVoice: "en_female_amanda_mars_bigtts",
-    maleVoice: "zh_male_jieshuonansheng_mars_bigtts",  // Morgan 解说男声
+    provider: "doubao",
+    // 豆包默认音色
+    femaleVoice: "S_hWsL9lNS1",  // chivox 女声（声音复刻）
+    maleVoice: "S_iWsL9lNS1",    // chivox 男声（声音复刻）
+    // 有道默认音色
+    femaleVoiceYoudao: "youxiaodao",
+    maleVoiceYoudao: "youxiaoguan",
+    // 微软 Edge TTS 默认音色（英文）
+    femaleVoiceEdge: "en-US-AvaMultilingualNeural",
+    maleVoiceEdge: "en-US-GuyNeural",
     femaleSpeed: "0.85",
     maleSpeed: "0.85",
     femaleVolume: "1.0",
     maleVolume: "1.0",
+    contextTexts: "这是英文听力考试场景，请把整体语速调慢，朗读清晰自然；每读完一句话要明显停顿，段落之间留出适当间隔，不要一口气连贯读完，保证听得清楚、反应时间充足。",
   };
 
-  // 女声设置
+  // 判断是否为声音复刻音色（S_ 开头）
+  const isTts20Voice = (voice) => voice && voice.startsWith("S_");
+
+  // TTS 服务商选择
+  const ttsProviderEl = document.getElementById("ttsProvider");
+  const ttsProviderHintEl = document.getElementById("ttsProviderHint");
+  const ttsFemaleVoiceYoudaoEl = document.getElementById("ttsFemaleVoiceYoudao");
+  const ttsMaleVoiceYoudaoEl = document.getElementById("ttsMaleVoiceYoudao");
+  const ttsFemaleVoiceEdgeEl = document.getElementById("ttsFemaleVoiceEdge");
+  const ttsMaleVoiceEdgeEl = document.getElementById("ttsMaleVoiceEdge");
+
+  // 从 storage 获取服务商和各平台音色设置
+  const { 
+    ttsProvider: savedProvider, 
+    ttsFemaleVoiceYoudao: savedFemaleVoiceYoudao, 
+    ttsMaleVoiceYoudao: savedMaleVoiceYoudao,
+    ttsFemaleVoiceEdge: savedFemaleVoiceEdge,
+    ttsMaleVoiceEdge: savedMaleVoiceEdge
+  } = await chrome.storage.sync.get([
+    "ttsProvider", 
+    "ttsFemaleVoiceYoudao", "ttsMaleVoiceYoudao",
+    "ttsFemaleVoiceEdge", "ttsMaleVoiceEdge"
+  ]);
+
+  // 切换服务商时更新 UI
+  const updateProviderUi = () => {
+    const provider = ttsProviderEl?.value || "doubao";
+    const isDoubao = provider === "doubao";
+    const isYoudao = provider === "youdao";
+    const isEdge = provider === "edge";
+
+    // 切换音色下拉框显示
+    document.querySelectorAll(".tts-voice-doubao").forEach(el => el.style.display = isDoubao ? "" : "none");
+    document.querySelectorAll(".tts-voice-youdao").forEach(el => el.style.display = isYoudao ? "" : "none");
+    document.querySelectorAll(".tts-voice-edge").forEach(el => el.style.display = isEdge ? "" : "none");
+
+    // 更新提示文字
+    if (ttsProviderHintEl) {
+      if (isDoubao) {
+        ttsProviderHintEl.textContent = "豆包：声音复刻音色支持提示词调节语速；moon系列支持语速/音量数值调节";
+      } else if (isYoudao) {
+        ttsProviderHintEl.textContent = "有道：所有音色均支持语速/音量数值调节（0.5~2.0）";
+      } else if (isEdge) {
+        ttsProviderHintEl.textContent = "微软 Edge TTS：免费在线合成，支持 400+ 语音，无需 API 密钥";
+      }
+    }
+
+    // 更新 UI 可见性
+    updateTtsUiVisibility();
+  };
+
+  // 初始化服务商
+  if (ttsProviderEl) {
+    ttsProviderEl.value = savedProvider || TTS_DEFAULTS.provider;
+    ttsProviderEl.addEventListener("change", () => {
+      chrome.storage.sync.set({ ttsProvider: ttsProviderEl.value });
+      updateProviderUi();
+    });
+  }
+
+  // 有道音色设置
+  if (ttsFemaleVoiceYoudaoEl) {
+    ttsFemaleVoiceYoudaoEl.value = savedFemaleVoiceYoudao || TTS_DEFAULTS.femaleVoiceYoudao;
+    ttsFemaleVoiceYoudaoEl.addEventListener("change", () => {
+      chrome.storage.sync.set({ ttsFemaleVoiceYoudao: ttsFemaleVoiceYoudaoEl.value });
+    });
+  }
+  if (ttsMaleVoiceYoudaoEl) {
+    ttsMaleVoiceYoudaoEl.value = savedMaleVoiceYoudao || TTS_DEFAULTS.maleVoiceYoudao;
+    ttsMaleVoiceYoudaoEl.addEventListener("change", () => {
+      chrome.storage.sync.set({ ttsMaleVoiceYoudao: ttsMaleVoiceYoudaoEl.value });
+    });
+  }
+
+  // 微软 Edge TTS 音色设置
+  if (ttsFemaleVoiceEdgeEl) {
+    ttsFemaleVoiceEdgeEl.value = savedFemaleVoiceEdge || TTS_DEFAULTS.femaleVoiceEdge;
+    ttsFemaleVoiceEdgeEl.addEventListener("change", () => {
+      chrome.storage.sync.set({ ttsFemaleVoiceEdge: ttsFemaleVoiceEdgeEl.value });
+    });
+  }
+  if (ttsMaleVoiceEdgeEl) {
+    ttsMaleVoiceEdgeEl.value = savedMaleVoiceEdge || TTS_DEFAULTS.maleVoiceEdge;
+    ttsMaleVoiceEdgeEl.addEventListener("change", () => {
+      chrome.storage.sync.set({ ttsMaleVoiceEdge: ttsMaleVoiceEdgeEl.value });
+    });
+  }
+
+  // 豆包女声设置
   if (ttsFemaleVoiceEl) {
     ttsFemaleVoiceEl.value = savedFemaleVoice || TTS_DEFAULTS.femaleVoice;
     ttsFemaleVoiceEl.addEventListener("change", () => {
       chrome.storage.sync.set({ ttsFemaleVoice: ttsFemaleVoiceEl.value });
+      updateTtsUiVisibility();
     });
   }
   if (ttsFemaleSpeedEl) {
@@ -423,11 +529,12 @@ restoreParseState();
     });
   }
 
-  // 男声设置
+  // 豆包男声设置
   if (ttsMaleVoiceEl) {
     ttsMaleVoiceEl.value = savedMaleVoice || TTS_DEFAULTS.maleVoice;
     ttsMaleVoiceEl.addEventListener("change", () => {
       chrome.storage.sync.set({ ttsMaleVoice: ttsMaleVoiceEl.value });
+      updateTtsUiVisibility();
     });
   }
   if (ttsMaleSpeedEl) {
@@ -443,23 +550,84 @@ restoreParseState();
     });
   }
 
+  // 声音复刻提示词设置
+  const ttsContextTextsEl = document.getElementById("ttsContextTexts");
+  const ttsContextTextsSection = document.getElementById("ttsContextTextsSection");
+  const ttsFemaleSpeedRow = document.getElementById("ttsFemaleSpeedRow");
+  const ttsFemaleVolumeRow = document.getElementById("ttsFemaleVolumeRow");
+  const ttsMaleSpeedRow = document.getElementById("ttsMaleSpeedRow");
+  const ttsMaleVolumeRow = document.getElementById("ttsMaleVolumeRow");
+
+  // 从 storage 获取 context_texts 设置
+  const { ttsContextTexts: savedContextTexts } = await chrome.storage.sync.get(["ttsContextTexts"]);
+
+  if (ttsContextTextsEl) {
+    ttsContextTextsEl.value = savedContextTexts !== undefined ? savedContextTexts : TTS_DEFAULTS.contextTexts;
+    const saveContextTexts = () => chrome.storage.sync.set({ ttsContextTexts: ttsContextTextsEl.value });
+    ttsContextTextsEl.addEventListener("change", saveContextTexts);
+    ttsContextTextsEl.addEventListener("blur", saveContextTexts);
+  }
+
+  // 根据服务商和音色类型显示/隐藏 UI 元素
+  const updateTtsUiVisibility = () => {
+    const provider = ttsProviderEl?.value || "doubao";
+    const isDoubao = provider === "doubao";
+    const femaleVoice = ttsFemaleVoiceEl?.value || "";
+    const maleVoice = ttsMaleVoiceEl?.value || "";
+    const hasTts20 = isDoubao && (isTts20Voice(femaleVoice) || isTts20Voice(maleVoice));
+
+    // 声音复刻提示词区域：仅豆包且有声音复刻音色时显示
+    if (ttsContextTextsSection) {
+      ttsContextTextsSection.style.display = hasTts20 ? "" : "none";
+    }
+
+    // 女声语速/音量：有道始终显示，豆包非声音复刻音色时显示
+    const showFemaleSpeedVolume = !isDoubao || !isTts20Voice(femaleVoice);
+    if (ttsFemaleSpeedRow) ttsFemaleSpeedRow.style.display = showFemaleSpeedVolume ? "" : "none";
+    if (ttsFemaleVolumeRow) ttsFemaleVolumeRow.style.display = showFemaleSpeedVolume ? "" : "none";
+
+    // 男声语速/音量：有道始终显示，豆包非声音复刻音色时显示
+    const showMaleSpeedVolume = !isDoubao || !isTts20Voice(maleVoice);
+    if (ttsMaleSpeedRow) ttsMaleSpeedRow.style.display = showMaleSpeedVolume ? "" : "none";
+    if (ttsMaleVolumeRow) ttsMaleVolumeRow.style.display = showMaleSpeedVolume ? "" : "none";
+  };
+
+  // 初始化服务商 UI
+  updateProviderUi();
+
+  // 初始化 UI 可见性
+  updateTtsUiVisibility();
+
   // TTS 重置默认值按钮
   const ttsResetBtn = document.getElementById("ttsResetDefaults");
   if (ttsResetBtn) {
     ttsResetBtn.addEventListener("click", () => {
       // 清除存储中的 TTS 设置
       chrome.storage.sync.remove([
+        "ttsProvider",
         "ttsFemaleVoice", "ttsMaleVoice",
+        "ttsFemaleVoiceYoudao", "ttsMaleVoiceYoudao",
+        "ttsFemaleVoiceEdge", "ttsMaleVoiceEdge",
         "ttsFemaleSpeed", "ttsMaleSpeed",
-        "ttsFemaleVolume", "ttsMaleVolume"
+        "ttsFemaleVolume", "ttsMaleVolume",
+        "ttsContextTexts"
       ], () => {
         // 重置 UI 为默认值
+        if (ttsProviderEl) ttsProviderEl.value = TTS_DEFAULTS.provider;
         if (ttsFemaleVoiceEl) ttsFemaleVoiceEl.value = TTS_DEFAULTS.femaleVoice;
         if (ttsMaleVoiceEl) ttsMaleVoiceEl.value = TTS_DEFAULTS.maleVoice;
+        if (ttsFemaleVoiceYoudaoEl) ttsFemaleVoiceYoudaoEl.value = TTS_DEFAULTS.femaleVoiceYoudao;
+        if (ttsMaleVoiceYoudaoEl) ttsMaleVoiceYoudaoEl.value = TTS_DEFAULTS.maleVoiceYoudao;
+        if (ttsFemaleVoiceEdgeEl) ttsFemaleVoiceEdgeEl.value = TTS_DEFAULTS.femaleVoiceEdge;
+        if (ttsMaleVoiceEdgeEl) ttsMaleVoiceEdgeEl.value = TTS_DEFAULTS.maleVoiceEdge;
         if (ttsFemaleSpeedEl) ttsFemaleSpeedEl.value = TTS_DEFAULTS.femaleSpeed;
         if (ttsMaleSpeedEl) ttsMaleSpeedEl.value = TTS_DEFAULTS.maleSpeed;
         if (ttsFemaleVolumeEl) ttsFemaleVolumeEl.value = TTS_DEFAULTS.femaleVolume;
         if (ttsMaleVolumeEl) ttsMaleVolumeEl.value = TTS_DEFAULTS.maleVolume;
+        if (ttsContextTextsEl) ttsContextTextsEl.value = TTS_DEFAULTS.contextTexts;
+        // 更新 UI
+        updateProviderUi();
+        updateTtsUiVisibility();
         // 显示提示
         ttsResetBtn.textContent = "已重置 ✓";
         setTimeout(() => { ttsResetBtn.textContent = "重置"; }, 1500);
@@ -522,10 +690,28 @@ restoreParseState();
         return;
       }
 
-      // 获取当前设置
-      const voice = currentTestGender === "female" 
-        ? (ttsFemaleVoiceEl?.value || "zh_female_wanwanxiaohe_moon_bigtts")
-        : (ttsMaleVoiceEl?.value || "zh_male_wennuanahu_moon_bigtts");
+      // 获取当前服务商
+      const provider = ttsProviderEl?.value || "doubao";
+      const isDoubao = provider === "doubao";
+      const isYoudao = provider === "youdao";
+      const isEdge = provider === "edge";
+
+      // 根据服务商获取音色
+      let voice;
+      if (isDoubao) {
+        voice = currentTestGender === "female"
+          ? (ttsFemaleVoiceEl?.value || TTS_DEFAULTS.femaleVoice)
+          : (ttsMaleVoiceEl?.value || TTS_DEFAULTS.maleVoice);
+      } else if (isYoudao) {
+        voice = currentTestGender === "female"
+          ? (ttsFemaleVoiceYoudaoEl?.value || TTS_DEFAULTS.femaleVoiceYoudao)
+          : (ttsMaleVoiceYoudaoEl?.value || TTS_DEFAULTS.maleVoiceYoudao);
+      } else if (isEdge) {
+        voice = currentTestGender === "female"
+          ? (ttsFemaleVoiceEdgeEl?.value || TTS_DEFAULTS.femaleVoiceEdge)
+          : (ttsMaleVoiceEdgeEl?.value || TTS_DEFAULTS.maleVoiceEdge);
+      }
+
       const speed = currentTestGender === "female"
         ? parseFloat(ttsFemaleSpeedEl?.value || "0.85")
         : parseFloat(ttsMaleSpeedEl?.value || "0.85");
@@ -533,30 +719,40 @@ restoreParseState();
         ? parseFloat(ttsFemaleVolumeEl?.value || "1.0")
         : parseFloat(ttsMaleVolumeEl?.value || "1.0");
 
-      // 检测英文音色是否包含中文
-      const isEnglishVoice = voice.startsWith("en_");
-      const hasChinese = /[\u4e00-\u9fa5]/.test(text);
-      if (isEnglishVoice && hasChinese) {
-        ttsTestInfo.textContent = "当前选择的是英文音色，不支持中文内容。请使用纯英文文本或切换为中文音色。";
-        ttsTestInfo.className = "modal-info error";
-        return;
+      // 检测英文音色是否包含中文（仅豆包）
+      if (isDoubao) {
+        const isEnglishVoice = voice.startsWith("en_");
+        const hasChinese = /[\u4e00-\u9fa5]/.test(text);
+        if (isEnglishVoice && hasChinese) {
+          ttsTestInfo.textContent = "当前选择的是英文音色，不支持中文内容。请使用纯英文文本或切换为中文音色。";
+          ttsTestInfo.className = "modal-info error";
+          return;
+        }
       }
 
       ttsTestInfo.textContent = "正在合成音频...";
       ttsTestInfo.className = "modal-info loading";
 
       try {
+        // 构建请求体
+        const reqBody = {
+          text,
+          speaker: voice,
+          format: "mp3",
+          sample_rate: 24000,
+          provider,
+        };
+
+        // 有道或豆包非声音复刻音色：使用 speed_ratio/volume_ratio
+        if (!isDoubao || !isTts20Voice(voice)) {
+          reqBody.speed_ratio = speed;
+          reqBody.volume_ratio = volume;
+        }
+
         const resp = await fetch("http://127.0.0.1:8766/api/tts", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            text,
-            speaker: voice,
-            speed_ratio: speed,
-            volume_ratio: volume,
-            format: "mp3",
-            sample_rate: 24000,
-          }),
+          body: JSON.stringify(reqBody),
         });
 
         if (!resp.ok) {
@@ -570,7 +766,12 @@ restoreParseState();
         }
 
         currentAudioBase64 = data.audioBase64;
-        ttsTestInfo.textContent = `合成成功！语速: ${speed}x, 音量: ${volume}x`;
+        if (isDoubao && isTts20Voice(voice)) {
+          ttsTestInfo.textContent = `合成成功！(豆包声音复刻)`;
+        } else {
+          const providerName = isDoubao ? "豆包" : (isYoudao ? "有道" : "微软 Edge");
+          ttsTestInfo.textContent = `合成成功！(${providerName}) 语速: ${speed}x, 音量: ${volume}x`;
+        }
         ttsTestInfo.className = "modal-info";
 
         // 自动播放
@@ -635,12 +836,49 @@ restoreParseState();
 
   let synthAudioBase64 = null;
 
+  // 获取音色显示名称（从下拉框选项文本中提取）
+  const getVoiceDisplayName = (selectEl) => {
+    if (!selectEl) return "";
+    const option = selectEl.options[selectEl.selectedIndex];
+    return option ? option.text.split(" ")[0] : selectEl.value;
+  };
+
+  // 更新自定义合成对话框中的当前设置信息
+  const updateSynthModalInfo = () => {
+    const provider = ttsProviderEl?.value || "doubao";
+    const providerEl = document.getElementById("ttsSynthProvider");
+    const femaleVoiceEl = document.getElementById("ttsSynthFemaleVoice");
+    const maleVoiceEl = document.getElementById("ttsSynthMaleVoice");
+
+    // 服务商名称
+    const providerNames = { doubao: "豆包", youdao: "有道", edge: "微软 Edge" };
+    if (providerEl) providerEl.textContent = providerNames[provider] || provider;
+
+    // 根据服务商获取音色名称
+    let femaleVoiceName = "", maleVoiceName = "";
+    if (provider === "doubao") {
+      femaleVoiceName = getVoiceDisplayName(ttsFemaleVoiceEl);
+      maleVoiceName = getVoiceDisplayName(ttsMaleVoiceEl);
+    } else if (provider === "youdao") {
+      femaleVoiceName = getVoiceDisplayName(ttsFemaleVoiceYoudaoEl);
+      maleVoiceName = getVoiceDisplayName(ttsMaleVoiceYoudaoEl);
+    } else if (provider === "edge") {
+      femaleVoiceName = getVoiceDisplayName(ttsFemaleVoiceEdgeEl);
+      maleVoiceName = getVoiceDisplayName(ttsMaleVoiceEdgeEl);
+    }
+
+    if (femaleVoiceEl) femaleVoiceEl.textContent = femaleVoiceName;
+    if (maleVoiceEl) maleVoiceEl.textContent = maleVoiceName;
+  };
+
   const openTtsSynthModal = () => {
     synthAudioBase64 = null;
     ttsSynthInfo.textContent = "";
     ttsSynthInfo.className = "modal-info";
     ttsSynthAudioWrap.classList.add("hidden");
     ttsSynthDownload.disabled = true;
+    // 更新当前设置信息显示
+    updateSynthModalInfo();
     ttsSynthModal.classList.remove("hidden");
   };
 
@@ -669,9 +907,22 @@ restoreParseState();
         return;
       }
 
-      // 获取当前 TTS 设置
-      const femaleVoice = ttsFemaleVoiceEl?.value || TTS_DEFAULTS.femaleVoice;
-      const maleVoice = ttsMaleVoiceEl?.value || TTS_DEFAULTS.maleVoice;
+      // 获取当前服务商
+      const provider = ttsProviderEl?.value || "doubao";
+
+      // 根据服务商获取音色
+      let femaleVoice, maleVoice;
+      if (provider === "doubao") {
+        femaleVoice = ttsFemaleVoiceEl?.value || TTS_DEFAULTS.femaleVoice;
+        maleVoice = ttsMaleVoiceEl?.value || TTS_DEFAULTS.maleVoice;
+      } else if (provider === "youdao") {
+        femaleVoice = ttsFemaleVoiceYoudaoEl?.value || TTS_DEFAULTS.femaleVoiceYoudao;
+        maleVoice = ttsMaleVoiceYoudaoEl?.value || TTS_DEFAULTS.maleVoiceYoudao;
+      } else if (provider === "edge") {
+        femaleVoice = ttsFemaleVoiceEdgeEl?.value || TTS_DEFAULTS.femaleVoiceEdge;
+        maleVoice = ttsMaleVoiceEdgeEl?.value || TTS_DEFAULTS.maleVoiceEdge;
+      }
+
       const femaleSpeed = parseFloat(ttsFemaleSpeedEl?.value || TTS_DEFAULTS.femaleSpeed);
       const maleSpeed = parseFloat(ttsMaleSpeedEl?.value || TTS_DEFAULTS.maleSpeed);
       const femaleVolume = parseFloat(ttsFemaleVolumeEl?.value || TTS_DEFAULTS.femaleVolume);
@@ -680,7 +931,10 @@ restoreParseState();
       // 检测是否为对话模式
       const isDialogue = /^[WwMmQqAa][：:]/m.test(text);
 
-      ttsSynthInfo.textContent = isDialogue ? "正在合成对话音频..." : "正在合成音频...";
+      const providerNames = { doubao: "豆包", youdao: "有道", edge: "微软 Edge" };
+      ttsSynthInfo.textContent = isDialogue 
+        ? `正在使用 ${providerNames[provider]} 合成对话音频...` 
+        : `正在使用 ${providerNames[provider]} 合成音频...`;
       ttsSynthInfo.className = "modal-info loading";
       ttsSynthPlay.disabled = true;
       ttsSynthAudioWrap.classList.add("hidden");
@@ -694,6 +948,7 @@ restoreParseState();
             dialogue: isDialogue,
             format: "mp3",
             sample_rate: 24000,
+            provider: provider,
             // 非对话模式使用女声设置
             speaker: isDialogue ? undefined : femaleVoice,
             speed_ratio: isDialogue ? undefined : femaleSpeed,
@@ -761,6 +1016,16 @@ restoreParseState();
       URL.revokeObjectURL(url);
       ttsSynthInfo.textContent = "下载已开始";
       ttsSynthInfo.className = "modal-info";
+    });
+  }
+
+  // ── 在新标签打开设置 ──────────────────────────────────────────────
+  const openSettingsInTabBtn = document.getElementById("openSettingsInTab");
+  if (openSettingsInTabBtn) {
+    openSettingsInTabBtn.addEventListener("click", () => {
+      // 在新标签页打开 popup.html
+      chrome.tabs.create({ url: chrome.runtime.getURL("popup.html?tab=settings") });
+      window.close();
     });
   }
 
@@ -1006,10 +1271,29 @@ document.getElementById("detect").addEventListener("click", async () => {
     if (detectEl) detectEl.classList.remove("is-analyzing");
     return;
   }
-  // 先发 PING 确认 content 已注入，避免误报「注入失败」
+  // 先发 PING 确认 content 已注入，若未注入则尝试自动注入
+  let contentReady = false;
   try {
     await chrome.tabs.sendMessage(tab.id, { type: "PING" });
+    contentReady = true;
   } catch (pingErr) {
+    // content script 未注入，尝试自动注入
+    setDetectResultSimple("正在初始化连接…", "text-muted");
+    try {
+      await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        files: ["content.js"],
+      });
+      // 等待 content script 初始化
+      await new Promise(r => setTimeout(r, 500));
+      // 再次尝试 PING
+      await chrome.tabs.sendMessage(tab.id, { type: "PING" });
+      contentReady = true;
+    } catch (injectErr) {
+      console.warn("自动注入 content script 失败:", injectErr);
+    }
+  }
+  if (!contentReady) {
     setDetectResultSimple("无法连接录题页，请确保当前标签页是录题页并刷新该页后再点「开始检测」。", "text-error");
     if (detectEl) detectEl.classList.remove("is-analyzing");
     return;
@@ -1697,8 +1981,8 @@ async function doFillFromNormalized(normalizedSlice, startIdx1Based) {
   }
   if (!tabId) { setMsg("无法确定录题页，请确认页面已打开", true); return; }
 
-  const { selectors, defaultAudioUrl, defaultImageUrl, ttsFemaleVoice, ttsMaleVoice, ttsFemaleSpeed, ttsMaleSpeed, ttsFemaleVolume, ttsMaleVolume } =
-    await chrome.storage.sync.get(["selectors", "defaultAudioUrl", "defaultImageUrl", "ttsFemaleVoice", "ttsMaleVoice", "ttsFemaleSpeed", "ttsMaleSpeed", "ttsFemaleVolume", "ttsMaleVolume"]);
+  const { selectors, defaultAudioUrl, defaultImageUrl, ttsProvider, ttsFemaleVoice, ttsMaleVoice, ttsFemaleVoiceYoudao, ttsMaleVoiceYoudao, ttsFemaleVoiceEdge, ttsMaleVoiceEdge, ttsFemaleSpeed, ttsMaleSpeed, ttsFemaleVolume, ttsMaleVolume, ttsContextTexts } =
+    await chrome.storage.sync.get(["selectors", "defaultAudioUrl", "defaultImageUrl", "ttsProvider", "ttsFemaleVoice", "ttsMaleVoice", "ttsFemaleVoiceYoudao", "ttsMaleVoiceYoudao", "ttsFemaleVoiceEdge", "ttsMaleVoiceEdge", "ttsFemaleSpeed", "ttsMaleSpeed", "ttsFemaleVolume", "ttsMaleVolume", "ttsContextTexts"]);
 
   setMsg(`从第 ${startIdx1Based} 题起填充，共 ${normalizedSlice.length} 题…`, false);
   const _resumeBtn = document.getElementById("resumeFillBtn");
@@ -1707,6 +1991,7 @@ async function doFillFromNormalized(normalizedSlice, startIdx1Based) {
   _lastFillOffset = startIdx1Based - 1;
   setFillingState(true);
 
+  const provider = ttsProvider || "doubao";
   try {
     const result = await chrome.tabs.sendMessage(tabId, {
       type: "FILL_FORM",
@@ -1715,12 +2000,18 @@ async function doFillFromNormalized(normalizedSlice, startIdx1Based) {
       defaultAudioUrl: (defaultAudioUrl || "").trim() || undefined,
       defaultImageUrl: (defaultImageUrl || "").trim() || undefined,
       ttsSettings: {
-        femaleVoice: ttsFemaleVoice || "en_female_amanda_mars_bigtts",
-        maleVoice: ttsMaleVoice || "zh_male_jieshuonansheng_mars_bigtts",
+        provider,
+        femaleVoice: provider === "doubao" ? (ttsFemaleVoice || "S_hWsL9lNS1")
+          : provider === "youdao" ? (ttsFemaleVoiceYoudao || "youxiaodao")
+          : (ttsFemaleVoiceEdge || "en-US-AvaMultilingualNeural"),
+        maleVoice: provider === "doubao" ? (ttsMaleVoice || "S_iWsL9lNS1")
+          : provider === "youdao" ? (ttsMaleVoiceYoudao || "youxiaoguan")
+          : (ttsMaleVoiceEdge || "en-US-GuyNeural"),
         femaleSpeed: parseFloat(ttsFemaleSpeed) || 0.85,
         maleSpeed: parseFloat(ttsMaleSpeed) || 0.85,
         femaleVolume: parseFloat(ttsFemaleVolume) || 1.0,
         maleVolume: parseFloat(ttsMaleVolume) || 1.0,
+        contextTexts: ttsContextTexts || "",
       },
       debugSource: "parse",
     });
@@ -1821,10 +2112,15 @@ async function doFill(questions, skipTts = false) {
 
   const { 
     selectors, pageQuestionTotal, pageSlots, defaultAudioUrl, defaultImageUrl, hasTopLevelAudio,
-    ttsFemaleVoice, ttsMaleVoice, ttsFemaleSpeed, ttsMaleSpeed, ttsFemaleVolume, ttsMaleVolume
+    ttsProvider: ttsProvider2, ttsFemaleVoice, ttsMaleVoice, 
+    ttsFemaleVoiceYoudao: ttsFemaleVoiceYoudao2, ttsMaleVoiceYoudao: ttsMaleVoiceYoudao2,
+    ttsFemaleVoiceEdge: ttsFemaleVoiceEdge2, ttsMaleVoiceEdge: ttsMaleVoiceEdge2,
+    ttsFemaleSpeed, ttsMaleSpeed, ttsFemaleVolume, ttsMaleVolume, ttsContextTexts: ttsContextTexts2
   } = await chrome.storage.sync.get([
     "selectors", "pageQuestionTotal", "pageSlots", "defaultAudioUrl", "defaultImageUrl", "hasTopLevelAudio",
-    "ttsFemaleVoice", "ttsMaleVoice", "ttsFemaleSpeed", "ttsMaleSpeed", "ttsFemaleVolume", "ttsMaleVolume"
+    "ttsProvider", "ttsFemaleVoice", "ttsMaleVoice", "ttsFemaleVoiceYoudao", "ttsMaleVoiceYoudao",
+    "ttsFemaleVoiceEdge", "ttsMaleVoiceEdge",
+    "ttsFemaleSpeed", "ttsMaleSpeed", "ttsFemaleVolume", "ttsMaleVolume", "ttsContextTexts"
   ]);
   // 未检测过页面结构时给出提示，但不阻断填充（content.js 内 runFill 会再次 detectForm 新检测）
   const hasStructure = selectors && Object.values(selectors).some(Boolean);
@@ -1862,6 +2158,7 @@ async function doFill(questions, skipTts = false) {
 
   setFillingState(true);
 
+  const provider2 = ttsProvider2 || "doubao";
   try {
     const result = await chrome.tabs.sendMessage(tabId, {
       type: "FILL_FORM",
@@ -1870,12 +2167,18 @@ async function doFill(questions, skipTts = false) {
       defaultAudioUrl: (defaultAudioUrl || "").trim() || undefined,
       defaultImageUrl: (defaultImageUrl || "").trim() || undefined,
       ttsSettings: {
-        femaleVoice: ttsFemaleVoice || "en_female_amanda_mars_bigtts",
-        maleVoice: ttsMaleVoice || "zh_male_jieshuonansheng_mars_bigtts",
+        provider: provider2,
+        femaleVoice: provider2 === "doubao" ? (ttsFemaleVoice || "S_hWsL9lNS1")
+          : provider2 === "youdao" ? (ttsFemaleVoiceYoudao2 || "youxiaodao")
+          : (ttsFemaleVoiceEdge2 || "en-US-AvaMultilingualNeural"),
+        maleVoice: provider2 === "doubao" ? (ttsMaleVoice || "S_iWsL9lNS1")
+          : provider2 === "youdao" ? (ttsMaleVoiceYoudao2 || "youxiaoguan")
+          : (ttsMaleVoiceEdge2 || "en-US-GuyNeural"),
         femaleSpeed: parseFloat(ttsFemaleSpeed) || 0.85,
         maleSpeed: parseFloat(ttsMaleSpeed) || 0.85,
         femaleVolume: parseFloat(ttsFemaleVolume) || 1.0,
         maleVolume: parseFloat(ttsMaleVolume) || 1.0,
+        contextTexts: ttsContextTexts2 || "",
       },
       debugSource: "parse",
     });
@@ -2388,8 +2691,18 @@ document.getElementById("fill").addEventListener("click", async () => {
   }
   
   const sel = await getSelectorsForJsonPanel(tab.id);
-  const { defaultAudioUrl: dau, defaultImageUrl: diu, ttsFemaleVoice, ttsMaleVoice, ttsFemaleSpeed, ttsMaleSpeed, ttsFemaleVolume, ttsMaleVolume } = 
-    await chrome.storage.sync.get(["defaultAudioUrl", "defaultImageUrl", "ttsFemaleVoice", "ttsMaleVoice", "ttsFemaleSpeed", "ttsMaleSpeed", "ttsFemaleVolume", "ttsMaleVolume"]);
+  const { 
+    defaultAudioUrl: dau, defaultImageUrl: diu, 
+    ttsProvider: ttsProvider3, ttsFemaleVoice, ttsMaleVoice, 
+    ttsFemaleVoiceYoudao: ttsFemaleVoiceYoudao3, ttsMaleVoiceYoudao: ttsMaleVoiceYoudao3, 
+    ttsFemaleVoiceEdge: ttsFemaleVoiceEdge3, ttsMaleVoiceEdge: ttsMaleVoiceEdge3,
+    ttsFemaleSpeed, ttsMaleSpeed, ttsFemaleVolume, ttsMaleVolume, ttsContextTexts: ttsContextTexts3 
+  } = await chrome.storage.sync.get([
+    "defaultAudioUrl", "defaultImageUrl", "ttsProvider", "ttsFemaleVoice", "ttsMaleVoice", 
+    "ttsFemaleVoiceYoudao", "ttsMaleVoiceYoudao", "ttsFemaleVoiceEdge", "ttsMaleVoiceEdge",
+    "ttsFemaleSpeed", "ttsMaleSpeed", "ttsFemaleVolume", "ttsMaleVolume", "ttsContextTexts"
+  ]);
+  const provider3 = ttsProvider3 || "doubao";
   try {
     await chrome.tabs.sendMessage(tab.id, {
       type: "FILL_FORM",
@@ -2398,12 +2711,18 @@ document.getElementById("fill").addEventListener("click", async () => {
       defaultAudioUrl: (dau || "").trim() || undefined,
       defaultImageUrl: (diu || "").trim() || undefined,
       ttsSettings: {
-        femaleVoice: ttsFemaleVoice || "en_female_amanda_mars_bigtts",
-        maleVoice: ttsMaleVoice || "zh_male_jieshuonansheng_mars_bigtts",
+        provider: provider3,
+        femaleVoice: provider3 === "doubao" ? (ttsFemaleVoice || "S_hWsL9lNS1")
+          : provider3 === "youdao" ? (ttsFemaleVoiceYoudao3 || "youxiaodao")
+          : (ttsFemaleVoiceEdge3 || "en-US-AvaMultilingualNeural"),
+        maleVoice: provider3 === "doubao" ? (ttsMaleVoice || "S_iWsL9lNS1")
+          : provider3 === "youdao" ? (ttsMaleVoiceYoudao3 || "youxiaoguan")
+          : (ttsMaleVoiceEdge3 || "en-US-GuyNeural"),
         femaleSpeed: parseFloat(ttsFemaleSpeed) || 0.85,
         maleSpeed: parseFloat(ttsMaleSpeed) || 0.85,
         femaleVolume: parseFloat(ttsFemaleVolume) || 1.0,
         maleVolume: parseFloat(ttsMaleVolume) || 1.0,
+        contextTexts: ttsContextTexts3 || "",
       },
       debugSource: "json",
     });

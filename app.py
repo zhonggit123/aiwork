@@ -45,6 +45,7 @@ app.add_middleware(
 
 # 全局 config，首次请求时加载
 _CONFIG = None
+_CONFIG_MTIME = 0.0  # 配置文件修改时间，用于热加载
 
 # ── 图片会话管理 ──────────────────────────────────────────────────────────────
 # session_id → 图片临时目录 Path
@@ -165,13 +166,16 @@ def _enrich_questions_with_option_images(
 
 
 def get_config() -> dict:
-    global _CONFIG
-    if _CONFIG is None:
-        path = _BASE_DIR / "config.yaml"
-        if not path.exists():
-            raise FileNotFoundError("请复制 config.example.yaml 为 config.yaml 并填写（与 exe 同目录）")
+    global _CONFIG, _CONFIG_MTIME
+    path = _BASE_DIR / "config.yaml"
+    if not path.exists():
+        raise FileNotFoundError("请复制 config.example.yaml 为 config.yaml 并填写（与 exe 同目录）")
+    # 检测文件修改时间，支持热加载
+    mtime = path.stat().st_mtime
+    if _CONFIG is None or mtime > _CONFIG_MTIME:
         with open(path, "r", encoding="utf-8") as f:
             _CONFIG = yaml.safe_load(f)
+        _CONFIG_MTIME = mtime
     return _CONFIG
 
 
@@ -212,6 +216,12 @@ class TtsRequest(BaseModel):
     male_speed: float | None = None
     female_volume: float | None = None
     male_volume: float | None = None
+    # TTS 2.0 提示词（用于调节语速、情绪等，仅豆包声音复刻音色支持）
+    context_texts: str | None = None
+    female_context_texts: str | None = None
+    male_context_texts: str | None = None
+    # TTS 服务商：doubao（豆包/火山引擎）、youdao（有道智云）或 edge（微软 Edge TTS）
+    provider: str = "doubao"
 
 
 # ── TTS 合成 ──────────────────────────────────────────────────────────────────
@@ -262,6 +272,11 @@ def _parse_dialogue_lines(text: str) -> list[dict]:
     return segments
 
 
+def _is_tts20_voice(speaker: str) -> bool:
+    """判断是否为声音复刻音色（S_ 开头的音色 ID）"""
+    return speaker and speaker.startswith("S_")
+
+
 async def _synthesize_single(
     text: str,
     speaker: str,
@@ -271,21 +286,31 @@ async def _synthesize_single(
     volume_ratio: float,
     access_key: str,
     app_id: str | None,
+    context_texts: str | None = None,
 ) -> bytes:
     """调用火山引擎 TTS v3 合成单段音频，返回原始音频字节。"""
     # 根据 speaker 名称选择 resource_id
+    # S_ 开头的是声音复刻音色，使用 volc.megatts.default
     # uranus 系列用 seed-tts-2.0，其他（moon/mars）用 seed-tts-1.0
-    if "_uranus_" in speaker:
+    if _is_tts20_voice(speaker):
+        resource_id = "volc.megatts.default"  # 声音复刻音色
+    elif "_uranus_" in speaker:
         resource_id = "seed-tts-2.0"
     else:
         resource_id = "seed-tts-1.0"
     
     url = "https://openspeech.bytedance.com/api/v3/tts/unidirectional"
     
+    # TTS 2.0 音色：使用 context_texts 控制语速等，将提示词用中括号放到文本前面
+    final_text = text.strip()
+    if _is_tts20_voice(speaker) and context_texts:
+        final_text = f"[{context_texts}]{final_text}"
+        print(f"[TTS] TTS 2.0 音色，添加 context_texts 前缀: [{context_texts[:50]}...]")
+    
     request_body = {
         "user": {"uid": "ai_luti_tts"},
         "req_params": {
-            "text": text.strip(),
+            "text": final_text,
             "speaker": speaker,
             "speed_ratio": speed_ratio,
             "loudness_ratio": volume_ratio,  # 豆包 TTS 使用 loudness_ratio 而非 volume_ratio
@@ -297,6 +322,12 @@ async def _synthesize_single(
         },
     }
     
+    # TTS 2.0 音色：添加 context_texts 到 additions
+    if _is_tts20_voice(speaker) and context_texts:
+        import json as json_module
+        additions = {"disable_markdown_filter": True, "enable_language_detector": True, "context_texts": [context_texts]}
+        request_body["req_params"]["additions"] = json_module.dumps(additions)
+    
     headers = {
         "Content-Type": "application/json",
         "X-Api-Key": access_key,
@@ -305,7 +336,7 @@ async def _synthesize_single(
     if app_id:
         headers["X-Api-App-Id"] = app_id
     
-    print(f"[TTS] 请求: speaker={speaker}, resource_id={resource_id}, text={text[:80]}...")
+    print(f"[TTS] 请求: speaker={speaker}, resource_id={resource_id}, text={final_text[:80]}...")
     print(f"[TTS] Headers: X-Api-Resource-Id={resource_id}, X-Api-App-Id={app_id}")
     
     async with httpx.AsyncClient(timeout=60.0) as client:
@@ -352,76 +383,236 @@ async def _synthesize_single(
         return b"".join(audio_parts)
 
 
+async def _synthesize_edge_tts(
+    text: str,
+    speaker: str,
+    speed_ratio: float,
+    volume_ratio: float,
+) -> bytes:
+    """调用微软 Edge TTS API 合成音频，返回原始音频字节。"""
+    import edge_tts
+    import io
+    
+    # 语速转换：edge-tts 使用百分比格式，如 "+50%" 或 "-25%"
+    # speed_ratio 1.0 = 正常，0.5 = -50%，2.0 = +100%
+    speed_percent = int((speed_ratio - 1.0) * 100)
+    rate_str = f"+{speed_percent}%" if speed_percent >= 0 else f"{speed_percent}%"
+    
+    # 音量转换：edge-tts 使用百分比格式
+    volume_percent = int((volume_ratio - 1.0) * 100)
+    volume_str = f"+{volume_percent}%" if volume_percent >= 0 else f"{volume_percent}%"
+    
+    print(f"[TTS-Edge] 请求: speaker={speaker}, rate={rate_str}, volume={volume_str}, text={text[:80]}...")
+    
+    try:
+        communicate = edge_tts.Communicate(text, speaker, rate=rate_str, volume=volume_str)
+        audio_data = io.BytesIO()
+        
+        async for chunk in communicate.stream():
+            if chunk["type"] == "audio":
+                audio_data.write(chunk["data"])
+        
+        result = audio_data.getvalue()
+        print(f"[TTS-Edge] 合成成功，音频大小: {len(result)} 字节")
+        return result
+    except Exception as e:
+        print(f"[TTS-Edge] 合成失败: {e}")
+        raise Exception(f"Edge TTS 错误: {str(e)}")
+
+
+async def _synthesize_youdao(
+    text: str,
+    speaker: str,
+    speed_ratio: float,
+    volume_ratio: float,
+    app_key: str,
+    app_secret: str,
+) -> bytes:
+    """调用有道智云 TTS API 合成音频，返回原始音频字节。"""
+    import hashlib
+    import uuid
+    import time
+    import urllib.parse
+    
+    url = "https://openapi.youdao.com/ttsapi"
+    
+    # 生成签名
+    salt = str(uuid.uuid4())
+    curtime = str(int(time.time()))
+    
+    # input 计算：q前10个字符 + q长度 + q后10个字符（当q长度大于20）
+    q = text.strip()
+    if len(q) > 20:
+        input_str = q[:10] + str(len(q)) + q[-10:]
+    else:
+        input_str = q
+    
+    # sign = sha256(appKey + input + salt + curtime + appSecret)
+    sign_str = app_key + input_str + salt + curtime + app_secret
+    sign = hashlib.sha256(sign_str.encode('utf-8')).hexdigest()
+    
+    # 有道 TTS 语速范围：0.5 ~ 2.0，默认 1.0
+    speed = str(max(0.5, min(2.0, speed_ratio)))
+    # 有道 TTS 音量范围：0.5 ~ 5.0，默认 1.0
+    volume = str(max(0.5, min(5.0, volume_ratio)))
+    
+    data = {
+        "q": q,
+        "appKey": app_key,
+        "salt": salt,
+        "sign": sign,
+        "signType": "v3",
+        "curtime": curtime,
+        "format": "mp3",
+        "speed": speed,
+        "volume": volume,
+        "voiceName": speaker,
+    }
+    
+    print(f"[TTS-Youdao] 请求: speaker={speaker}, speed={speed}, volume={volume}, text={q[:80]}...")
+    
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        resp = await client.post(url, data=data)
+        print(f"[TTS-Youdao] 响应状态: {resp.status_code}, Content-Type: {resp.headers.get('content-type', '')}")
+        
+        # 有道 TTS：成功时返回 audio/mp3，失败时返回 application/json
+        content_type = resp.headers.get("content-type", "")
+        if "audio" in content_type:
+            print(f"[TTS-Youdao] 合成成功，音频大小: {len(resp.content)} 字节")
+            return resp.content
+        else:
+            # 返回 JSON 错误
+            try:
+                err = resp.json()
+                error_code = err.get("errorCode", "unknown")
+                print(f"[TTS-Youdao] 合成失败: errorCode={error_code}")
+                raise Exception(f"有道 TTS 错误: {error_code}")
+            except Exception as e:
+                print(f"[TTS-Youdao] 解析错误响应失败: {e}, body={resp.text[:200]}")
+                raise Exception(f"有道 TTS 错误: {resp.text[:200]}")
+
+
 @app.post("/api/tts")
 async def synthesize_tts(req: TtsRequest):
     """TTS 语音合成接口。
+    
+    支持两种服务商：
+    - doubao（豆包/火山引擎）：默认
+    - youdao（有道智云）
     
     支持两种模式：
     1. 普通模式：直接合成 text，使用指定 speaker
     2. 对话模式 (dialogue=True)：解析 W:/M:/Q:/A: 标记，自动分配男女声
     """
     config = get_config()
-    tts_cfg = config.get("tts", {})
-    
-    access_key = tts_cfg.get("access_key") or os.environ.get("DOUBAO_TTS_ACCESS_KEY", "")
-    app_id = tts_cfg.get("app_id") or os.environ.get("DOUBAO_TTS_APP_ID", "")
-    # 优先使用请求中的音色设置，否则使用配置文件中的默认值
-    male_speaker = req.male_speaker or tts_cfg.get("male_speaker", "zh_male_wennuanahu_moon_bigtts")
-    female_speaker = req.female_speaker or tts_cfg.get("female_speaker", "zh_female_wanwanxiaohe_moon_bigtts")
-    # 语速设置
-    male_speed = req.male_speed if req.male_speed is not None else req.speed_ratio
-    female_speed = req.female_speed if req.female_speed is not None else req.speed_ratio
-    # 音量设置
-    male_volume = req.male_volume if req.male_volume is not None else req.volume_ratio
-    female_volume = req.female_volume if req.female_volume is not None else req.volume_ratio
-    
-    if not access_key:
-        raise HTTPException(500, "TTS access_key 未配置，请在 config.yaml 的 tts.access_key 中填写")
+    provider = req.provider or "doubao"
     
     text = (req.text or "").strip()
     if not text:
         raise HTTPException(400, "text 不能为空")
     
+    # 语速/音量设置
+    male_speed = req.male_speed if req.male_speed is not None else req.speed_ratio
+    female_speed = req.female_speed if req.female_speed is not None else req.speed_ratio
+    male_volume = req.male_volume if req.male_volume is not None else req.volume_ratio
+    female_volume = req.female_volume if req.female_volume is not None else req.volume_ratio
+    
     try:
-        if req.dialogue:
-            # 对话模式：解析标记，分段合成，拼接
-            segments = _parse_dialogue_lines(text)
-            if not segments:
-                raise HTTPException(400, "对话文本解析后为空")
+        if provider == "youdao":
+            # ── 有道智云 TTS ──
+            youdao_cfg = config.get("youdao_tts", {})
+            app_key = youdao_cfg.get("app_key") or os.environ.get("YOUDAO_TTS_APP_KEY", "")
+            app_secret = youdao_cfg.get("app_secret") or os.environ.get("YOUDAO_TTS_APP_SECRET", "")
             
-            audio_parts: list[bytes] = []
-            for seg in segments:
-                spk = female_speaker if seg["speaker"] == "female" else male_speaker
-                spd = female_speed if seg["speaker"] == "female" else male_speed
-                vol = female_volume if seg["speaker"] == "female" else male_volume
-                part = await _synthesize_single(
-                    seg["text"],
-                    spk,
-                    req.format,
-                    req.sample_rate,
-                    spd,
-                    vol,
-                    access_key,
-                    app_id,
-                )
-                audio_parts.append(part)
+            if not app_key or not app_secret:
+                raise HTTPException(500, "有道 TTS 未配置，请在 config.yaml 的 youdao_tts 中填写 app_key 和 app_secret")
             
-            combined = b"".join(audio_parts)
+            # 有道默认音色
+            male_speaker = req.male_speaker or youdao_cfg.get("male_speaker", "youxiaozhi")
+            female_speaker = req.female_speaker or youdao_cfg.get("female_speaker", "youxiaoqin")
+            
+            if req.dialogue:
+                segments = _parse_dialogue_lines(text)
+                if not segments:
+                    raise HTTPException(400, "对话文本解析后为空")
+                
+                audio_parts: list[bytes] = []
+                for seg in segments:
+                    spk = female_speaker if seg["speaker"] == "female" else male_speaker
+                    spd = female_speed if seg["speaker"] == "female" else male_speed
+                    vol = female_volume if seg["speaker"] == "female" else male_volume
+                    part = await _synthesize_youdao(seg["text"], spk, spd, vol, app_key, app_secret)
+                    audio_parts.append(part)
+                combined = b"".join(audio_parts)
+            else:
+                speaker = req.speaker or female_speaker
+                combined = await _synthesize_youdao(text, speaker, female_speed, female_volume, app_key, app_secret)
+        
+        elif provider == "edge":
+            # ── 微软 Edge TTS ──
+            edge_cfg = config.get("edge_tts", {})
+            male_speaker = req.male_speaker or edge_cfg.get("male_speaker", "zh-CN-YunxiNeural")
+            female_speaker = req.female_speaker or edge_cfg.get("female_speaker", "zh-CN-XiaoxiaoNeural")
+
+            if req.dialogue:
+                segments = _parse_dialogue_lines(text)
+                if not segments:
+                    raise HTTPException(400, "对话文本解析后为空")
+
+                audio_parts: list[bytes] = []
+                for seg in segments:
+                    spk = female_speaker if seg["speaker"] == "female" else male_speaker
+                    spd = female_speed if seg["speaker"] == "female" else male_speed
+                    vol = female_volume if seg["speaker"] == "female" else male_volume
+                    part = await _synthesize_edge_tts(seg["text"], spk, spd, vol)
+                    audio_parts.append(part)
+                combined = b"".join(audio_parts)
+            else:
+                speaker = req.speaker or female_speaker
+                combined = await _synthesize_edge_tts(text, speaker, female_speed, female_volume)
+
         else:
-            # 普通模式：使用指定音色或默认女声
-            speaker = req.speaker or female_speaker
-            speed = female_speed
-            volume = female_volume
-            combined = await _synthesize_single(
-                text,
-                speaker,
-                req.format,
-                req.sample_rate,
-                speed,
-                volume,
-                access_key,
-                app_id,
-            )
+            # ── 豆包/火山引擎 TTS ──
+            tts_cfg = config.get("tts", {})
+            access_key = tts_cfg.get("access_key") or os.environ.get("DOUBAO_TTS_ACCESS_KEY", "")
+            app_id = tts_cfg.get("app_id") or os.environ.get("DOUBAO_TTS_APP_ID", "")
+            
+            if not access_key:
+                raise HTTPException(500, "豆包 TTS access_key 未配置，请在 config.yaml 的 tts.access_key 中填写")
+            
+            male_speaker = req.male_speaker or tts_cfg.get("male_speaker", "zh_male_wennuanahu_moon_bigtts")
+            female_speaker = req.female_speaker or tts_cfg.get("female_speaker", "zh_female_wanwanxiaohe_moon_bigtts")
+            
+            # context_texts 设置（声音复刻音色使用）
+            male_context_texts = req.male_context_texts or req.context_texts
+            female_context_texts = req.female_context_texts or req.context_texts
+            
+            if req.dialogue:
+                segments = _parse_dialogue_lines(text)
+                if not segments:
+                    raise HTTPException(400, "对话文本解析后为空")
+                
+                audio_parts: list[bytes] = []
+                for seg in segments:
+                    spk = female_speaker if seg["speaker"] == "female" else male_speaker
+                    spd = female_speed if seg["speaker"] == "female" else male_speed
+                    vol = female_volume if seg["speaker"] == "female" else male_volume
+                    ctx = female_context_texts if seg["speaker"] == "female" else male_context_texts
+                    part = await _synthesize_single(
+                        seg["text"], spk, req.format, req.sample_rate, spd, vol, access_key, app_id, ctx
+                    )
+                    audio_parts.append(part)
+                combined = b"".join(audio_parts)
+            else:
+                speaker = req.speaker or female_speaker
+                ctx = req.context_texts
+                if speaker == male_speaker:
+                    ctx = male_context_texts
+                elif speaker == female_speaker:
+                    ctx = female_context_texts
+                combined = await _synthesize_single(
+                    text, speaker, req.format, req.sample_rate, female_speed, female_volume, access_key, app_id, ctx
+                )
         
         if not combined:
             raise HTTPException(500, "TTS 合成返回空音频")

@@ -1808,15 +1808,71 @@ function runFillDebug(questions, baseSel) {
 }
 
 // ─── 填写表单 ──────────────────────────────────────────────────────────────
+
+/**
+ * 处理 TTS 文本：过滤音标，保留英文单词
+ * 规则：
+ * 1. 如果文本中既有英文单词又有音标，过滤掉音标，只保留英文单词
+ * 2. 如果全是音标（没有普通英文单词），保留音标用于合成
+ * 3. 音标格式：/.../ 或 /'.../ 或 /ˈ.../ 等（国际音标）
+ */
+function prepareTtsText(text) {
+  if (!text || typeof text !== 'string') return text;
+  
+  // 音标模式：匹配 /.../ 格式的音标（包含各种音标符号）
+  // 国际音标常见符号：ˈˌːəɪʊæɑɒɔɛɜʌŋθðʃʒtʃdʒ 等
+  const phoneticPattern = /\/[^\/]+\//g;
+  
+  // 检查是否包含音标
+  const hasPhonetics = phoneticPattern.test(text);
+  if (!hasPhonetics) return text;
+  
+  // 重置正则的 lastIndex
+  phoneticPattern.lastIndex = 0;
+  
+  // 检查是否有普通英文单词（不在音标内的英文）
+  // 先移除所有音标，看剩下的文本是否有英文单词
+  const textWithoutPhonetics = text.replace(phoneticPattern, ' ').trim();
+  const hasEnglishWords = /[a-zA-Z]{2,}/.test(textWithoutPhonetics);
+  
+  if (hasEnglishWords) {
+    // 有英文单词，过滤掉音标
+    // 同时处理可能的序号格式如 "1. truck /trʌk/" => "1. truck"
+    let result = text
+      .replace(phoneticPattern, '')  // 移除音标
+      .replace(/\s{2,}/g, ' ')       // 多个空格合并为一个
+      .trim();
+    return result;
+  } else {
+    // 全是音标，保留原文用于合成
+    return text;
+  }
+}
+
 async function runFill(questions, selectors, defaultAudioUrl, defaultImageUrl, debugSource, ttsSettings) {
   // TTS 设置默认值
   const tts = ttsSettings || {};
-  const ttsFemaleVoice = tts.femaleVoice || "en_female_amanda_mars_bigtts";
-  const ttsMaleVoice = tts.maleVoice || "zh_male_jieshuonansheng_mars_bigtts";
+  const ttsProvider = tts.provider || "doubao";  // 服务商：doubao、youdao 或 edge
+  // 根据服务商设置默认音色
+  let ttsFemaleVoice, ttsMaleVoice;
+  if (ttsProvider === "doubao") {
+    ttsFemaleVoice = tts.femaleVoice || "S_hWsL9lNS1";
+    ttsMaleVoice = tts.maleVoice || "S_iWsL9lNS1";
+  } else if (ttsProvider === "youdao") {
+    ttsFemaleVoice = tts.femaleVoice || "youxiaodao";
+    ttsMaleVoice = tts.maleVoice || "youxiaoguan";
+  } else if (ttsProvider === "edge") {
+    ttsFemaleVoice = tts.femaleVoice || "en-US-AvaMultilingualNeural";
+    ttsMaleVoice = tts.maleVoice || "en-US-GuyNeural";
+  } else {
+    ttsFemaleVoice = tts.femaleVoice || "S_hWsL9lNS1";
+    ttsMaleVoice = tts.maleVoice || "S_iWsL9lNS1";
+  }
   const ttsFemaleSpeed = tts.femaleSpeed || 0.85;
   const ttsMaleSpeed = tts.maleSpeed || 0.85;
   const ttsFemaleVolume = tts.femaleVolume || 1.0;
   const ttsMaleVolume = tts.maleVolume || 1.0;
+  const ttsContextTexts = tts.contextTexts || "";  // 声音复刻提示词（仅豆包）
   const baseSel = selectors || {};
   const qSel = (sel, key) => {
     const s = sel[key];
@@ -2552,16 +2608,22 @@ async function runFill(questions, selectors, defaultAudioUrl, defaultImageUrl, d
           // 为这个子题启动 TTS
           const ttsPromiseForBlank = (async () => {
             try {
-              const isDialogue = /^[WwMmQqAa][：:]/m.test(blankScript);
+              // 处理文本：过滤音标，保留英文单词
+              const ttsText = prepareTtsText(blankScript);
+              if (ttsText !== blankScript) {
+                log(`    子题 ${bi + 1}: 过滤音标后文本: "${ttsText.slice(0, 50)}..."`);
+              }
+              const isDialogue = /^[WwMmQqAa][：:]/m.test(ttsText);
               log(`    子题 ${bi + 1}: 发送 TTS 请求，isDialogue=${isDialogue}`);
               const resp = await fetch("http://127.0.0.1:8766/api/tts", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
-                  text: blankScript,
+                  text: ttsText,
                   dialogue: isDialogue,
                   format: "mp3",
                   sample_rate: 24000,
+                  provider: ttsProvider,
                   speed_ratio: isDialogue ? undefined : ttsFemaleSpeed,
                   volume_ratio: isDialogue ? undefined : ttsFemaleVolume,
                   female_speaker: ttsFemaleVoice,
@@ -2570,6 +2632,7 @@ async function runFill(questions, selectors, defaultAudioUrl, defaultImageUrl, d
                   male_speed: ttsMaleSpeed,
                   female_volume: ttsFemaleVolume,
                   male_volume: ttsMaleVolume,
+                  context_texts: ttsProvider === "doubao" ? (ttsContextTexts || undefined) : undefined,
                 }),
               });
               if (resp.ok) {
@@ -2618,16 +2681,22 @@ async function runFill(questions, selectors, defaultAudioUrl, defaultImageUrl, d
       // 异步调用 TTS API（使用已统一的 listeningScriptValue 和用户设置的音色/语速）
       ttsPromise = (async () => {
         try {
-          const isDialogue = /^[WwMmQqAa][：:]/m.test(listeningScriptValue);
-          log(`  第 ${i + 1} 题：发送 TTS 请求，文本长度=${listeningScriptValue.length}，isDialogue=${isDialogue}，女声=${ttsFemaleVoice}(速${ttsFemaleSpeed}x/量${ttsFemaleVolume}x)，男声=${ttsMaleVoice}(速${ttsMaleSpeed}x/量${ttsMaleVolume}x)`);
+          // 处理文本：过滤音标，保留英文单词
+          const ttsText = prepareTtsText(listeningScriptValue);
+          if (ttsText !== listeningScriptValue) {
+            log(`  第 ${i + 1} 题：过滤音标后文本: "${ttsText.slice(0, 80)}..."`);
+          }
+          const isDialogue = /^[WwMmQqAa][：:]/m.test(ttsText);
+          log(`  第 ${i + 1} 题：发送 TTS 请求 (${ttsProvider})，文本长度=${ttsText.length}，isDialogue=${isDialogue}，女声=${ttsFemaleVoice}(速${ttsFemaleSpeed}x/量${ttsFemaleVolume}x)，男声=${ttsMaleVoice}(速${ttsMaleSpeed}x/量${ttsMaleVolume}x)`);
           const resp = await fetch("http://127.0.0.1:8766/api/tts", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              text: listeningScriptValue,
+              text: ttsText,
               dialogue: isDialogue,
               format: "mp3",
               sample_rate: 24000,
+              provider: ttsProvider,
               speed_ratio: isDialogue ? undefined : ttsFemaleSpeed,
               volume_ratio: isDialogue ? undefined : ttsFemaleVolume,
               female_speaker: ttsFemaleVoice,
@@ -2636,6 +2705,7 @@ async function runFill(questions, selectors, defaultAudioUrl, defaultImageUrl, d
               male_speed: ttsMaleSpeed,
               female_volume: ttsFemaleVolume,
               male_volume: ttsMaleVolume,
+              context_texts: ttsProvider === "doubao" ? (ttsContextTexts || undefined) : undefined,
             }),
           });
           if (resp.ok) {

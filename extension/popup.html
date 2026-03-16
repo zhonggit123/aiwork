@@ -32,6 +32,13 @@
 
     <!-- 设置下拉面板 -->
     <div id="settingsDropdown" class="settings-dropdown hidden">
+      <!-- 在新标签打开设置 -->
+      <div class="settings-section" style="padding-bottom: 8px; border-bottom: 1px solid var(--gray-200); margin-bottom: 8px;">
+        <button type="button" class="btn btn-secondary btn-sm btn-full" id="openSettingsInTab" title="在新标签页打开完整设置">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:4px;"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+          在新标签页打开设置
+        </button>
+      </div>
       <!-- 模型选择 -->
       <div class="settings-section">
         <div class="settings-section-title">
@@ -106,7 +113,17 @@
           </span>
           <button type="button" class="settings-reset-btn" id="ttsResetDefaults" title="重置为默认值">重置</button>
         </div>
-        <div class="settings-hint">提示：moon系列支持语速/音量调节；mars/uranus系列语速无效</div>
+
+        <!-- TTS 服务商选择 -->
+        <div class="settings-row" style="margin-bottom: 8px;">
+          <label class="settings-label">服务商</label>
+          <select id="ttsProvider" class="settings-select-sm" style="width: 130px;">
+            <option value="doubao">豆包 (火山引擎)</option>
+            <option value="youdao">有道智云</option>
+            <option value="edge">微软 Edge TTS</option>
+          </select>
+        </div>
+        <div class="settings-hint" id="ttsProviderHint">豆包：声音复刻音色支持提示词调节语速；moon系列支持语速/音量数值调节</div>
 
         <!-- 女声设置 -->
         <div class="settings-subsection">
@@ -119,19 +136,46 @@
           </div>
           <div class="settings-row">
             <label class="settings-label">音色</label>
-            <select id="ttsFemaleVoice" class="settings-select-sm">
-              <option value="en_female_amanda_mars_bigtts">Amanda 英文 (默认)</option>
+            <!-- 豆包音色 -->
+            <select id="ttsFemaleVoice" class="settings-select-sm tts-voice-doubao">
+              <option value="S_hWsL9lNS1">chivox 女声 (默认)</option>
+              <option value="en_female_amanda_mars_bigtts">Amanda 英文</option>
               <option value="zh_female_wanwanxiaohe_moon_bigtts">婉婉小何 中文</option>
               <option value="zh_female_tianmeixiaoyuan_moon_bigtts">甜美小媛 中文</option>
               <option value="zh_female_qingcheyouni_moon_bigtts">清澈优妮 中文</option>
             </select>
+            <!-- 有道音色 -->
+            <select id="ttsFemaleVoiceYoudao" class="settings-select-sm tts-voice-youdao" style="display: none;">
+              <option value="youxiaodao">有小道 英文美式 (默认)</option>
+              <option value="youxiaoqin">有小沁 中文</option>
+              <option value="youxiaoxun">有小薰 中文</option>
+              <option value="youxiaofu">有小芙 中文</option>
+              <option value="youyuting">有雨婷 中文</option>
+              <option value="youxiaobei">有小贝 中文</option>
+              <option value="youxiaomei">有小美 英文美式</option>
+              <option value="youxiaoying">有小英 英文英式</option>
+              <option value="youyating">有雅婷 英文美式</option>
+              <option value="Saila">Saila 英文英式</option>
+              <option value="Auriana">Auriana 英文英式</option>
+            </select>
+            <!-- 微软 Edge TTS 音色 -->
+            <select id="ttsFemaleVoiceEdge" class="settings-select-sm tts-voice-edge" style="display: none;">
+              <option value="en-US-AvaMultilingualNeural">Ava 多语言 (默认)</option>
+              <option value="en-US-JennyNeural">Jenny 英文美式</option>
+              <option value="en-US-AriaNeural">Aria 英文美式</option>
+              <option value="en-US-SaraNeural">Sara 英文美式</option>
+              <option value="en-US-MichelleNeural">Michelle 英文美式</option>
+              <option value="en-GB-SoniaNeural">Sonia 英文英式</option>
+              <option value="en-GB-LibbyNeural">Libby 英文英式</option>
+              <option value="en-AU-NatashaNeural">Natasha 英文澳式</option>
+            </select>
           </div>
-          <div class="settings-row">
+          <div class="settings-row tts-speed-row" id="ttsFemaleSpeedRow">
             <label class="settings-label">语速</label>
             <input type="number" id="ttsFemaleSpeed" min="0.5" max="2.0" step="0.05" value="0.85" class="settings-input-sm" />
             <span class="settings-unit">x</span>
           </div>
-          <div class="settings-row">
+          <div class="settings-row tts-speed-row" id="ttsFemaleVolumeRow">
             <label class="settings-label">音量</label>
             <input type="number" id="ttsFemaleVolume" min="0.1" max="2.0" step="0.1" value="1.0" class="settings-input-sm" />
             <span class="settings-unit">x</span>
@@ -149,23 +193,54 @@
           </div>
           <div class="settings-row">
             <label class="settings-label">音色</label>
-            <select id="ttsMaleVoice" class="settings-select-sm">
-              <option value="zh_male_jieshuonansheng_mars_bigtts">Morgan 解说 (默认)</option>
+            <!-- 豆包音色 -->
+            <select id="ttsMaleVoice" class="settings-select-sm tts-voice-doubao">
+              <option value="S_iWsL9lNS1">chivox 男声 (默认)</option>
+              <option value="zh_male_jieshuonansheng_mars_bigtts">Morgan 解说</option>
               <option value="en_male_tim_uranus_bigtts">Tim 英文</option>
               <option value="zh_male_wennuanahu_moon_bigtts">温暖阿虎 中文</option>
               <option value="zh_male_chunhoukuanye_moon_bigtts">淳厚旷野 中文</option>
               <option value="zh_male_yangguangqingnian_moon_bigtts">阳光青年 中文</option>
             </select>
+            <!-- 有道音色 -->
+            <select id="ttsMaleVoiceYoudao" class="settings-select-sm tts-voice-youdao" style="display: none;">
+              <option value="youxiaoguan">有小官 英文英式 (默认)</option>
+              <option value="youxiaozhi">有小智 中文</option>
+              <option value="youxiaohao">有小浩 中文</option>
+              <option value="youxiaonan">有小楠 中文</option>
+              <option value="youxiaoke">有小课 中文讲题</option>
+              <option value="youxiaowei">有小伟 中英混</option>
+            </select>
+            <!-- 微软 Edge TTS 音色 -->
+            <select id="ttsMaleVoiceEdge" class="settings-select-sm tts-voice-edge" style="display: none;">
+              <option value="en-US-GuyNeural">Guy 英文美式 (默认)</option>
+              <option value="en-US-ChristopherNeural">Christopher 英文美式</option>
+              <option value="en-US-EricNeural">Eric 英文美式</option>
+              <option value="en-US-RogerNeural">Roger 英文美式</option>
+              <option value="en-US-BrianNeural">Brian 英文美式</option>
+              <option value="en-GB-RyanNeural">Ryan 英文英式</option>
+              <option value="en-GB-ThomasNeural">Thomas 英文英式</option>
+              <option value="en-AU-WilliamNeural">William 英文澳式</option>
+            </select>
           </div>
-          <div class="settings-row">
+          <div class="settings-row tts-speed-row" id="ttsMaleSpeedRow">
             <label class="settings-label">语速</label>
             <input type="number" id="ttsMaleSpeed" min="0.5" max="2.0" step="0.05" value="0.85" class="settings-input-sm" />
             <span class="settings-unit">x</span>
           </div>
-          <div class="settings-row">
+          <div class="settings-row tts-speed-row" id="ttsMaleVolumeRow">
             <label class="settings-label">音量</label>
             <input type="number" id="ttsMaleVolume" min="0.1" max="2.0" step="0.1" value="1.0" class="settings-input-sm" />
             <span class="settings-unit">x</span>
+          </div>
+        </div>
+
+        <!-- TTS 2.0 提示词设置（仅豆包声音复刻音色） -->
+        <div class="settings-subsection" id="ttsContextTextsSection">
+          <div class="settings-row" style="flex-direction: column; align-items: stretch;">
+            <label class="settings-label" style="margin-bottom: 4px;">声音复刻提示词</label>
+            <textarea id="ttsContextTexts" class="settings-textarea" rows="3" placeholder="用于调节语速、情绪等，仅对豆包声音复刻音色有效"></textarea>
+            <div class="settings-hint" style="margin-top: 4px;">支持语速调整、情绪/语气调整、音量调整、音感调整等</div>
           </div>
         </div>
 
@@ -236,6 +311,21 @@
         <button type="button" class="modal-close" id="ttsSynthModalClose">&times;</button>
       </div>
       <div class="modal-body">
+        <!-- 当前 TTS 设置信息 -->
+        <div class="tts-current-info" id="ttsSynthCurrentInfo">
+          <span class="tts-info-label">当前设置：</span>
+          <span class="tts-info-provider" id="ttsSynthProvider">豆包</span>
+          <span class="tts-info-sep">|</span>
+          <span class="tts-info-voice">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#ec4899" stroke-width="2" style="vertical-align:-1px;"><path d="M12 2a4 4 0 0 0-4 4v2a4 4 0 0 0 8 0V6a4 4 0 0 0-4-4z"/><path d="M12 12v10"/><path d="M8 17h8"/></svg>
+            <span id="ttsSynthFemaleVoice">晓晓</span>
+          </span>
+          <span class="tts-info-sep">|</span>
+          <span class="tts-info-voice">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" stroke-width="2" style="vertical-align:-1px;"><circle cx="10" cy="14" r="7"/><path d="M15 9l6-6"/><path d="M16 3h5v5"/></svg>
+            <span id="ttsSynthMaleVoice">云希</span>
+          </span>
+        </div>
         <div class="modal-hint">
           支持对话标记：<code>W:</code> <code>Q:</code> 女声，<code>M:</code> <code>A:</code> 男声<br>
           无标记时使用女声合成
