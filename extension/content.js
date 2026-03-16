@@ -2706,6 +2706,19 @@ async function runFill(questions, selectors, defaultAudioUrl, defaultImageUrl, d
           blankScript = blankQuestion;
           log(`    子题 ${bi + 1}: 顶层无共享原文，使用题干作为 TTS 文本`);
         }
+        // 无听力原文时，用答案合成音频（如 listening_fill_and_retell 第2小题的参考答案）
+        if (!blankScript && blank.answer) {
+          let answerText = "";
+          if (Array.isArray(blank.answer)) {
+            answerText = blank.answer.filter(x => typeof x === "string").join(" ");
+          } else if (typeof blank.answer === "string") {
+            answerText = blank.answer.split("#")[0].trim();  // 取第一个参考答案
+          }
+          if (answerText.length > 30) {
+            blankScript = answerText;
+            log(`    子题 ${bi + 1}: 无听力原文，使用参考答案作为 TTS 文本 (${answerText.length}字)`);
+          }
+        }
         
         const blankAudioSel = curSel[`blank_audio_${bi + 1}`];
         
@@ -2754,6 +2767,19 @@ async function runFill(questions, selectors, defaultAudioUrl, defaultImageUrl, d
     if (!listeningScriptValue && q.question && q.question.trim().length > 0 && blanksTtsPromises.length === 0) {
       listeningScriptValue = q.question.trim();
       log(`  第 ${i + 1} 题：无听力原文，使用题干作为 TTS 文本 (type=${q.type}): "${listeningScriptValue.slice(0, 50)}..."`);
+    }
+    // 无听力原文时，用答案合成音频（如 listening_fill_and_retell 等题型的参考答案）
+    if (!listeningScriptValue && blanksTtsPromises.length === 0 && q.answer) {
+      let answerText = "";
+      if (Array.isArray(q.answer)) {
+        answerText = q.answer.filter(x => typeof x === "string").join(" ");
+      } else if (typeof q.answer === "string") {
+        answerText = q.answer.split("#")[0].trim();
+      }
+      if (answerText.length > 30) {
+        listeningScriptValue = answerText;
+        log(`  第 ${i + 1} 题：无听力原文，使用参考答案作为 TTS 文本 (type=${q.type}, ${answerText.length}字)`);
+      }
     }
 
     const hasScript = listeningScriptValue.length > 0;
@@ -3865,6 +3891,12 @@ async function runFill(questions, selectors, defaultAudioUrl, defaultImageUrl, d
                   if ($ && typeof $.fn.uploadify === "function") {
                     const settings = $(fileEl).data("uploadify") || $(uploadContainer).data("uploadify");
                     if (settings) {
+                      // 检查 fileExt 是否允许音频文件
+                      const fileExt = (settings.fileExt || settings.fileTypeExts || "").toLowerCase();
+                      const allowsAudio = !fileExt || fileExt.includes("mp3") || fileExt.includes("wav") || fileExt.includes("audio") || fileExt.includes("*.*");
+                      if (!allowsAudio) {
+                        log(`    子题 ${result.index + 1}: uploadify不支持音频 (fileExt=${fileExt})，跳过`);
+                      } else {
                       log(`    子题 ${result.index + 1}: 找到uploadify settings，uploader=${settings.uploader || settings.uploadScript}`);
                       const xhr = new XMLHttpRequest();
                       const fd = new FormData();
@@ -3901,6 +3933,7 @@ async function runFill(questions, selectors, defaultAudioUrl, defaultImageUrl, d
                         });
                         uploaded = true;
                       }
+                      }  // allowsAudio
                     } else {
                       log(`    子题 ${result.index + 1}: fileEl存在但无uploadify settings`);
                     }
@@ -3916,13 +3949,20 @@ async function runFill(questions, selectors, defaultAudioUrl, defaultImageUrl, d
               // 尝试在 part 内找 file input
               const partFileInput = part ? part.querySelector("input[type='file']") : null;
               if (partFileInput) {
-                const sel = partFileInput.id ? `#${partFileInput.id}` : null;
-                if (sel) {
-                  log(`    子题 ${result.index + 1}: 尝试 fillFileField: ${sel}`);
-                  const ok = fillFileField(sel, audioFile);
-                  if (ok) {
-                    uploaded = true;
-                    log(`    子题 ${result.index + 1}: fillFileField 成功`);
+                // 检查 accept 属性是否支持音频
+                const acceptAttr = (partFileInput.accept || "").toLowerCase();
+                const acceptsAudio = !acceptAttr || acceptAttr.includes("mp3") || acceptAttr.includes("audio") || acceptAttr.includes("*");
+                if (!acceptsAudio) {
+                  log(`    子题 ${result.index + 1}: input不支持音频 (accept=${acceptAttr})，跳过`);
+                } else {
+                  const sel = partFileInput.id ? `#${partFileInput.id}` : null;
+                  if (sel) {
+                    log(`    子题 ${result.index + 1}: 尝试 fillFileField: ${sel}`);
+                    const ok = fillFileField(sel, audioFile);
+                    if (ok) {
+                      uploaded = true;
+                      log(`    子题 ${result.index + 1}: fillFileField 成功`);
+                    }
                   }
                 }
               }
@@ -4016,6 +4056,12 @@ async function runFill(questions, selectors, defaultAudioUrl, defaultImageUrl, d
                     try {
                       const settings = $(fileEl).data("uploadify") || $(fileEl).closest("[class*='uploadify'],[id*='upload']").data("uploadify");
                       if (settings) {
+                        // 检查 fileExt 是否允许 mp3/音频文件
+                        const fileExt = (settings.fileExt || settings.fileTypeExts || "").toLowerCase();
+                        const allowsAudio = !fileExt || fileExt.includes("mp3") || fileExt.includes("wav") || fileExt.includes("audio") || fileExt.includes("*.*");
+                        if (!allowsAudio) {
+                          log(`  第 ${i + 1} 题：uploadify不支持音频 (fileExt=${fileExt})，跳过上传`);
+                        } else {
                         log(`  第 ${i + 1} 题：找到uploadify settings，尝试直接上传`);
                         const xhr = new XMLHttpRequest();
                         const fd = new FormData();
@@ -4055,17 +4101,26 @@ async function runFill(questions, selectors, defaultAudioUrl, defaultImageUrl, d
                           uploaded = true;
                           await delay(1500);
                         }
+                        }  // allowsAudio
                       }
                     } catch (e2) {
                       log(`  第 ${i + 1} 题：uploadify上传异常: ${e2?.message}`);
                     }
                   }
+                  // 只有在上传框支持音频的情况下才尝试 fillFileField
                   if (!uploaded) {
-                    const ok = fillFileField(currentAudioFileSel, audioFile);
-                    log(`  第 ${i + 1} 题：fillFileField=${ok}`);
-                    if (ok) {
-                      uploaded = true;
-                      await delay(1500);
+                    // 检查 input 的 accept 属性
+                    const acceptAttr = (fileEl.accept || "").toLowerCase();
+                    const acceptsAudio = !acceptAttr || acceptAttr.includes("mp3") || acceptAttr.includes("audio") || acceptAttr.includes("*");
+                    if (acceptsAudio) {
+                      const ok = fillFileField(currentAudioFileSel, audioFile);
+                      log(`  第 ${i + 1} 题：fillFileField=${ok}`);
+                      if (ok) {
+                        uploaded = true;
+                        await delay(1500);
+                      }
+                    } else {
+                      log(`  第 ${i + 1} 题：input[type=file]不支持音频 (accept=${acceptAttr})，跳过`);
                     }
                   }
                 }
