@@ -2625,11 +2625,10 @@ async function runFill(questions, selectors, defaultAudioUrl, defaultImageUrl, d
         log(`  初始检测到音频URL输入框: ${sel}`);
       }
       
-      // 检测音频上传容器（扩展选择器）
+      // 检测音频上传容器（只匹配明确与音频相关的选择器，避免误匹配图片上传框）
       const audioUploadContainer = scope.querySelector(
         "#audio_upload1, #audio_upload, div[id*='audio_upload'], .uploadify[id*='audio'], " +
-        ".uploadify, [class*='audio'][class*='upload'], [class*='upload'][class*='audio'], " +
-        ".file-upload-area, .upload-container, div[class*='uploadify']"
+        "[class*='audio'][class*='upload'], [class*='upload'][class*='audio']"
       );
       if (audioUploadContainer) {
         const fi = audioUploadContainer.querySelector("input[type='file']");
@@ -3968,12 +3967,11 @@ async function runFill(questions, selectors, defaultAudioUrl, defaultImageUrl, d
           log(`  第 ${i + 1} 题：检测到音频URL输入框: ${currentAudioUrlSel}`);
         }
         
-        // 检测音频上传容器（覆盖更多可能的选择器）
+        // 检测音频上传容器（只匹配明确与音频相关的选择器，避免误匹配图片上传框）
         const uploadContainer = scope.querySelector(
           "#audio_upload1, #audio_upload, div[id*='audio_upload'], .uploadify[id*='audio'], " +
           "[id='audio_upload1'], [id='audio_upload'], [id*='audioUpload'], .audio-upload-wrap, " +
-          ".uploadify, [class*='audio'][class*='upload'], [class*='upload'][class*='audio'], " +
-          ".file-upload-area, .upload-container, div[class*='uploadify']"
+          "[class*='audio'][class*='upload'], [class*='upload'][class*='audio']"
         );
         if (uploadContainer) {
           const fi = uploadContainer.querySelector("input[type='file']");
