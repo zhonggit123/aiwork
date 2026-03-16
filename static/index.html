@@ -2,64 +2,292 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Word 题库录入</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI 题库录入系统</title>
+  <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="/static/style.css" />
+  <style>
+    /* 覆盖 Tailwind 可能会影响旧 UI 的一些默认样式 */
+    body {
+      background: linear-gradient(145deg, #1a1b2e 0%, #16213e 50%, #0f3460 100%);
+      color: #e8e8e8;
+      font-family: "PingFang SC", "Microsoft YaHei", sans-serif;
+    }
+    .hero-bg {
+      background: radial-gradient(circle at 50% 0%, rgba(99, 102, 241, 0.15) 0%, transparent 50%);
+    }
+    .glass-panel {
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      backdrop-filter: blur(10px);
+    }
+    .feature-card {
+      transition: transform 0.3s ease, background 0.3s ease;
+    }
+    .feature-card:hover {
+      transform: translateY(-5px);
+      background: rgba(255, 255, 255, 0.06);
+      border-color: rgba(99, 102, 241, 0.4);
+    }
+    /* 隔离旧版 UI 的样式影响 */
+    .legacy-wrap {
+      max-width: 1200px; margin: 0 auto; padding: 24px;
+    }
+  </style>
 </head>
-<body>
-  <div class="wrap">
-    <header>
-      <h1>Word 题库录入</h1>
-      <div class="path-block">
-        <span class="path-label">技术实现路径</span>
-        <div class="path-flow">
-          <span class="path-step">上传 Word</span>
-          <span class="path-arrow" aria-hidden="true">→</span>
-          <span class="path-step">AI 解析</span>
-          <span class="path-arrow" aria-hidden="true">→</span>
-          <span class="path-step">编辑</span>
-          <span class="path-arrow" aria-hidden="true">→</span>
-          <span class="path-step">提交到录题系统</span>
+<body class="min-h-screen text-slate-200 selection:bg-indigo-500/30">
+
+  <!-- 顶部导航 -->
+  <nav class="sticky top-0 z-50 glass-panel border-b border-white/10">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="flex items-center justify-between h-16">
+        <div class="flex items-center gap-3">
+          <svg class="w-8 h-8 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
+          </svg>
+          <span class="font-bold text-xl tracking-wide bg-clip-text text-transparent bg-gradient-to-r from-indigo-400 to-cyan-400">
+            AI 题库录入
+          </span>
         </div>
-        <p class="path-desc">第一步：选择 Word 文件，由 AI 解析出题目；解析后可在下方表格中编辑，再复制 JSON 或一键提交。</p>
+        <div>
+          <a href="https://github.com/boyzhong123/aiwork" target="_blank" class="text-slate-300 hover:text-white transition flex items-center gap-2">
+            <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+              <path fill-rule="evenodd" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z" clip-rule="evenodd" />
+            </svg>
+            <span class="hidden sm:inline">GitHub</span>
+          </a>
+        </div>
       </div>
-    </header>
+    </div>
+  </nav>
 
-    <section class="upload" id="uploadSection">
-      <label class="file-label">
-        <input type="file" id="file" accept=".docx,.doc" multiple />
-        <span class="file-btn">选择 Word 文件并解析</span>
-      </label>
-      <p class="drop-hint">或将 .docx 文件拖拽到此处（可多选）</p>
-      <p id="parse-status" class="status"></p>
-    </section>
+  <!-- Hero Section -->
+  <main class="relative hero-bg pt-20 pb-16 px-4 sm:px-6 lg:px-8 overflow-hidden">
+    <div class="max-w-4xl mx-auto text-center">
+      <h1 class="text-4xl md:text-6xl font-extrabold tracking-tight mb-6">
+        一键将 Word 试卷<br class="hidden sm:block" />
+        <span class="text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-cyan-400">无缝填入在线题库</span>
+      </h1>
+      <p class="mt-4 text-xl text-slate-300 mb-10 leading-relaxed">
+        基于多模态大模型与浏览器扩展，自动解析复杂排版（表格、图片、混合音频），<br class="hidden md:block" />一键精准映射并填充到各大录题系统的表单与富文本中。
+      </p>
+      <div class="flex flex-wrap justify-center gap-4">
+        <a href="#tutorial" class="px-8 py-3 rounded-full bg-indigo-600 hover:bg-indigo-500 text-white font-medium transition shadow-lg shadow-indigo-500/30 flex items-center gap-2">
+          查看使用教程
+          <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 14l-7 7m0 0l-7-7m7 7V3" /></svg>
+        </a>
+        <a href="https://github.com/boyzhong123/aiwork/releases" target="_blank" class="px-8 py-3 rounded-full glass-panel hover:bg-white/10 text-white font-medium transition flex items-center gap-2">
+          下载最新版本
+          <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+        </a>
+      </div>
+    </div>
+  </main>
 
-    <section class="actions" id="actions" hidden>
-      <button type="button" id="copy-json">复制 JSON</button>
-      <button type="button" id="submit-api" class="primary">一键提交到系统</button>
-      <span id="submit-status" class="status"></span>
-    </section>
+  <!-- 功能亮点 -->
+  <section class="py-16 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+    <div class="text-center mb-12">
+      <h2 class="text-3xl font-bold mb-4">核心功能亮点</h2>
+      <div class="w-20 h-1 bg-indigo-500 mx-auto rounded-full"></div>
+    </div>
+    
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
+      <!-- Feature 1 -->
+      <div class="feature-card glass-panel rounded-2xl p-8">
+        <div class="w-14 h-14 rounded-xl bg-blue-500/20 flex items-center justify-center mb-6 text-blue-400">
+          <svg class="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+        </div>
+        <h3 class="text-xl font-bold mb-3">智能 Word/PDF 解析</h3>
+        <p class="text-slate-400 leading-relaxed">
+          结合大模型能力，精准提取 Word 中的单选、多选、填空、阅读理解等题型。完美支持内嵌图片提取、复杂表格转图片等难点场景。
+        </p>
+      </div>
 
-    <section class="table-wrap" id="table-wrap" hidden>
-      <table>
-        <thead>
-          <tr>
-            <th>#</th>
-            <th>题型</th>
-            <th>题干</th>
-            <th>选项</th>
-            <th>答案</th>
-            <th>解析</th>
-          </tr>
-        </thead>
-        <tbody id="tbody"></tbody>
-      </table>
-    </section>
+      <!-- Feature 2 -->
+      <div class="feature-card glass-panel rounded-2xl p-8">
+        <div class="w-14 h-14 rounded-xl bg-pink-500/20 flex items-center justify-center mb-6 text-pink-400">
+          <svg class="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.898a9 9 0 010 12.728M5 10v4a2 2 0 002 2h2l4 4V4L9 8H7a2 2 0 00-2 2z" /></svg>
+        </div>
+        <h3 class="text-xl font-bold mb-3">TTS 听力语音合成</h3>
+        <p class="text-slate-400 leading-relaxed">
+          内置豆包、有道、微软 Edge 多种 TTS 服务。可自动过滤音标，支持双人对话识别（男声/女声交替），一键合成标准听力音频。
+        </p>
+      </div>
 
-    <footer class="page-footer">
-      <p>在驰声录题页自动填表：先打开录题页面，再点浏览器「题库自动填表」插件；插件会检测到录题页后显示上传 Word（支持拖拽），解析后自动填入当前页。</p>
-    </footer>
-  </div>
+      <!-- Feature 3 -->
+      <div class="feature-card glass-panel rounded-2xl p-8">
+        <div class="w-14 h-14 rounded-xl bg-emerald-500/20 flex items-center justify-center mb-6 text-emerald-400">
+          <svg class="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" /></svg>
+        </div>
+        <h3 class="text-xl font-bold mb-3">无缝网页 DOM 填充</h3>
+        <p class="text-slate-400 leading-relaxed">
+          专为各大录题系统（如驰声等）优化的浏览器扩展。自动识别页面结构、富文本编辑器（UEditor等）及上传框，实现真正意义的“一键填入”。
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 技术路线图 -->
+  <section class="py-16 bg-black/20 border-y border-white/5">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="flex flex-col md:flex-row items-center gap-12">
+        <div class="md:w-1/2">
+          <h2 class="text-3xl font-bold mb-6">技术路线与架构</h2>
+          <div class="space-y-6">
+            <div class="flex gap-4">
+              <div class="flex-shrink-0 w-8 h-8 rounded-full bg-indigo-500/20 border border-indigo-500/50 flex items-center justify-center text-indigo-400 font-bold">1</div>
+              <div>
+                <h4 class="text-lg font-bold mb-1">本地解析服务 (Python/FastAPI)</h4>
+                <p class="text-slate-400 text-sm">使用 <code class="bg-white/10 px-1 rounded">python-docx</code> 提取文本，图片及表格渲染。对接大模型进行 JSON 结构化抽取，同时提供本地 TTS 代理与图片文件代理服务。</p>
+              </div>
+            </div>
+            <div class="flex gap-4">
+              <div class="flex-shrink-0 w-8 h-8 rounded-full bg-indigo-500/20 border border-indigo-500/50 flex items-center justify-center text-indigo-400 font-bold">2</div>
+              <div>
+                <h4 class="text-lg font-bold mb-1">浏览器扩展 (Manifest V3)</h4>
+                <p class="text-slate-400 text-sm">提供用户交互面板（配置模型、TTS音色等），负责与本地服务器通信。通过 Content Script 深度分析目标录题网页 DOM 树，精准匹配题干、选项、解析及音频/图片上传域。</p>
+              </div>
+            </div>
+            <div class="flex gap-4">
+              <div class="flex-shrink-0 w-8 h-8 rounded-full bg-indigo-500/20 border border-indigo-500/50 flex items-center justify-center text-indigo-400 font-bold">3</div>
+              <div>
+                <h4 class="text-lg font-bold mb-1">多模态协同填充</h4>
+                <p class="text-slate-400 text-sm">将本地抽取的图片/表格直接转为 File 对象并派发事件触发上传，异步合成 TTS 音频并注入页面，富文本编辑器通过脚本劫持或 API 直接写入 HTML。</p>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="md:w-1/2 w-full glass-panel rounded-2xl p-6 relative overflow-hidden">
+          <!-- 装饰背景 -->
+          <div class="absolute -right-10 -top-10 w-40 h-40 bg-indigo-500/20 blur-3xl rounded-full"></div>
+          <div class="absolute -left-10 -bottom-10 w-40 h-40 bg-cyan-500/20 blur-3xl rounded-full"></div>
+          
+          <div class="relative z-10 font-mono text-xs text-slate-300 space-y-2">
+            <div class="p-3 bg-slate-900/80 rounded border border-white/10 shadow flex justify-between">
+              <span>Client (Chrome Ext)</span>
+              <span class="text-indigo-400">Detect Forms</span>
+            </div>
+            <div class="text-center text-indigo-400 opacity-70">↓ Upload Word .docx</div>
+            <div class="p-3 bg-slate-900/80 rounded border border-white/10 shadow flex justify-between">
+              <span>Local Server (FastAPI)</span>
+              <span class="text-emerald-400">Extract Images/Tables</span>
+            </div>
+            <div class="text-center text-emerald-400 opacity-70">↓ LLM Structured Parse</div>
+            <div class="p-3 bg-slate-900/80 rounded border border-white/10 shadow flex justify-between">
+              <span>JSON Response</span>
+              <span class="text-pink-400">Questions Array</span>
+            </div>
+            <div class="text-center text-pink-400 opacity-70">↓ TTS + File Inject</div>
+            <div class="p-3 bg-slate-900/80 rounded border border-white/10 shadow flex justify-between">
+              <span>Target Website</span>
+              <span class="text-cyan-400">Auto Filled!</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 使用教程 -->
+  <section id="tutorial" class="py-16 max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
+    <div class="text-center mb-12">
+      <h2 class="text-3xl font-bold mb-4">使用教程</h2>
+      <div class="w-20 h-1 bg-indigo-500 mx-auto rounded-full"></div>
+    </div>
+
+    <div class="space-y-8 relative before:absolute before:inset-0 before:ml-5 before:-translate-x-px md:before:mx-auto md:before:translate-x-0 before:h-full before:w-0.5 before:bg-gradient-to-b before:from-transparent before:via-slate-700 before:to-transparent">
+      
+      <!-- 步骤1 -->
+      <div class="relative flex items-center justify-between md:justify-normal md:odd:flex-row-reverse group is-active">
+        <div class="flex items-center justify-center w-10 h-10 rounded-full border-4 border-slate-900 bg-indigo-500 text-white font-bold shadow shrink-0 md:order-1 md:group-odd:-translate-x-1/2 md:group-even:translate-x-1/2 z-10">1</div>
+        <div class="w-[calc(100%-4rem)] md:w-[calc(50%-2.5rem)] glass-panel p-6 rounded-xl border border-white/10">
+          <h3 class="font-bold text-lg mb-2 text-indigo-300">启动后端服务</h3>
+          <p class="text-slate-400 text-sm leading-relaxed">
+            双击运行打包好的 <code>题库后端.exe</code>（或通过 <code>python app.py</code> 启动）。运行后会自动开启 8766 端口，此时你正看到的这个网页即为本地服务。
+          </p>
+        </div>
+      </div>
+
+      <!-- 步骤2 -->
+      <div class="relative flex items-center justify-between md:justify-normal md:odd:flex-row-reverse group is-active">
+        <div class="flex items-center justify-center w-10 h-10 rounded-full border-4 border-slate-900 bg-indigo-500 text-white font-bold shadow shrink-0 md:order-1 md:group-odd:-translate-x-1/2 md:group-even:translate-x-1/2 z-10">2</div>
+        <div class="w-[calc(100%-4rem)] md:w-[calc(50%-2.5rem)] glass-panel p-6 rounded-xl border border-white/10">
+          <h3 class="font-bold text-lg mb-2 text-indigo-300">安装浏览器扩展</h3>
+          <p class="text-slate-400 text-sm leading-relaxed">
+            打开 Chrome/Edge 浏览器，进入扩展管理页 (<code>chrome://extensions/</code>)，开启"开发者模式"，选择"加载已解压的扩展程序"，选中解压后的 <code>extension</code> 文件夹。
+          </p>
+        </div>
+      </div>
+
+      <!-- 步骤3 -->
+      <div class="relative flex items-center justify-between md:justify-normal md:odd:flex-row-reverse group is-active">
+        <div class="flex items-center justify-center w-10 h-10 rounded-full border-4 border-slate-900 bg-indigo-500 text-white font-bold shadow shrink-0 md:order-1 md:group-odd:-translate-x-1/2 md:group-even:translate-x-1/2 z-10">3</div>
+        <div class="w-[calc(100%-4rem)] md:w-[calc(50%-2.5rem)] glass-panel p-6 rounded-xl border border-white/10">
+          <h3 class="font-bold text-lg mb-2 text-indigo-300">配置模型与选项</h3>
+          <p class="text-slate-400 text-sm leading-relaxed">
+            点击浏览器右上角的扩展图标，打开设置面板。填写好你的 LLM API Key（支持 OpenAI 格式，如火山引擎、DeepSeek 等），选择需要的 TTS 供应商及音色配置。
+          </p>
+        </div>
+      </div>
+
+      <!-- 步骤4 -->
+      <div class="relative flex items-center justify-between md:justify-normal md:odd:flex-row-reverse group is-active">
+        <div class="flex items-center justify-center w-10 h-10 rounded-full border-4 border-slate-900 bg-indigo-500 text-white font-bold shadow shrink-0 md:order-1 md:group-odd:-translate-x-1/2 md:group-even:translate-x-1/2 z-10">4</div>
+        <div class="w-[calc(100%-4rem)] md:w-[calc(50%-2.5rem)] glass-panel p-6 rounded-xl border border-white/10">
+          <h3 class="font-bold text-lg mb-2 text-indigo-300">一键解析填充</h3>
+          <p class="text-slate-400 text-sm leading-relaxed">
+            在浏览器的<strong>录题系统页面</strong>直接点击扩展面板的「开始检测」，系统会读取表单结构。拖入 Word 文档后，AI 会自动解析并一键帮你填好题干、选项、答案及合成音频！
+          </p>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- 隔离旧版解析工具区 -->
+  <section class="py-16 bg-black/30 border-t border-white/5">
+    <div class="text-center mb-8">
+      <h2 class="text-2xl font-bold text-slate-400">独立调试 / 备用解析工具</h2>
+      <p class="text-sm text-slate-500 mt-2">如果在某些系统中无法使用插件，你也可以在此处单独解析 Word，并手动复制 JSON。</p>
+    </div>
+    <div class="legacy-wrap">
+      <div class="upload" id="uploadSection">
+        <label class="file-label">
+          <input type="file" id="file" accept=".docx,.doc" multiple />
+          <span class="file-btn">选择 Word 文件并解析</span>
+        </label>
+        <p class="drop-hint">或将 .docx 文件拖拽到此处（可多选）</p>
+        <p id="parse-status" class="status"></p>
+      </div>
+
+      <div class="actions" id="actions" hidden>
+        <button type="button" id="copy-json">复制 JSON</button>
+        <button type="button" id="submit-api" class="primary">一键提交到系统</button>
+        <span id="submit-status" class="status"></span>
+      </div>
+
+      <div class="table-wrap" id="table-wrap" hidden>
+        <table>
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>题型</th>
+              <th>题干</th>
+              <th>选项</th>
+              <th>答案</th>
+              <th>解析</th>
+            </tr>
+          </thead>
+          <tbody id="tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <footer class="py-8 text-center text-sm text-slate-500 border-t border-white/10 bg-[#0f3460]">
+    <p>AI 题库录入系统 &copy; 2026. Powered by FastAPI & Chrome Extension.</p>
+  </footer>
+
   <script src="/static/app.js"></script>
 </body>
 </html>
