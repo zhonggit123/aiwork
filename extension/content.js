@@ -495,32 +495,11 @@ function getCurrentCardSubCount() {
   const root = document.querySelector(".topic-container, #topic-section, #topic") || document.querySelector("#right-container");
   if (!root) return 1;
   // 优先：.question-part 区块数（最明确）
-  // 但要过滤掉空白小题（页面自动添加的、没有任何内容的小题）
+  // 直接返回 .question-part 数量，不再过滤空白小题
+  // 因为页面结构检测时小题可能还没有填充内容，但我们需要知道实际的小题数量
   const parts = root.querySelectorAll(".question-part");
   if (parts && parts.length > 0) {
-    // 统计非空小题：至少有一个输入框有值，或有音频文件名
-    let nonEmptyCount = 0;
-    for (const part of parts) {
-      // 检查该小题内是否有任何输入框有值
-      const inputs = part.querySelectorAll("input[type='text'], input[type='number'], textarea");
-      const hasValue = Array.from(inputs).some(inp => (inp.value || "").trim() !== "");
-      // 检查是否有 UEditor 内容
-      const ueditors = part.querySelectorAll(".edui-body-container");
-      const hasUeditorContent = Array.from(ueditors).some(ue => {
-        const iframe = ue.querySelector("iframe");
-        if (!iframe) return false;
-        try {
-          const doc = iframe.contentDocument || iframe.contentWindow?.document;
-          const body = doc?.body;
-          return body && (body.textContent || "").trim().length > 0;
-        } catch (_) { return false; }
-      });
-      if (hasValue || hasUeditorContent) {
-        nonEmptyCount++;
-      }
-    }
-    // 如果所有小题都是空的，返回 1（至少保留一个小题位）
-    return nonEmptyCount > 0 ? nonEmptyCount : 1;
+    return parts.length;
   }
   // 次优：id 严格匹配 answer_N（纯数字后缀）的答案容器，如 div#answer_1、div#answer_2
   // 注意：不能匹配 answer_1_1、answer_1_2 这类嵌套选项元素
@@ -3520,13 +3499,18 @@ async function runFill(questions, selectors, defaultAudioUrl, defaultImageUrl, d
       (v) => typeof v === "string" && v.includes("/api/images/") && v.startsWith("http://localhost")
     );
     if (hasLocalOptionImages) {
+      // 重新打 data-fill-part-idx 标记，确保多小题选择器有效
+      try { document.querySelectorAll(".question-part").forEach((pt, pi) => pt.setAttribute("data-fill-part-idx", String(pi))); } catch (_) {}
+      
       const _OPT_ROLES = ["option_a", "option_b", "option_c", "option_d"];
 
       // 从 imageFileName 文本输入框的选择器推断对应的文件上传框选择器
       const deriveFileInputSel = (textSel) => {
-        if (!textSel) return null;
-        const textEl = document.querySelector(textSel);
-        if (!textEl || !textEl.id) return null;
+        if (!textSel) { log(`  deriveFileInputSel: textSel 为空`); return null; }
+        let textEl = null;
+        try { textEl = document.querySelector(textSel); } catch (e) { log(`  deriveFileInputSel: querySelector 异常: ${e.message}`); }
+        if (!textEl) { log(`  deriveFileInputSel: 找不到元素 ${textSel}`); return null; }
+        if (!textEl.id) { log(`  deriveFileInputSel: 元素无 id，尝试备用方案`); }
         // 模式：imageFileName4 → image_upload4 > input[type=file]
         const numMatch = textEl.id.match(/(\d+)$/);
         if (numMatch) {

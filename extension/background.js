@@ -166,6 +166,7 @@ function normalizeQuestionsToSlots(questions, pageTotal, pageSlots, hasTopLevelA
             answer: b.answer != null ? String(b.answer).trim() : "",
             options: Array.isArray(b.options) ? b.options : [],
             candidates: Array.isArray(b.candidates) ? b.candidates : [],
+            listening_script: b.listening_script || "",
           })),
         });
         qi += need;

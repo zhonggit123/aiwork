@@ -1173,6 +1173,36 @@ async def parse_word_multiple(
                         print(f"[parse-multiple] 题目 {q_idx+1} 注入剩余表格图片: {tbl_info['filename']} (顺序分配)")
                         tbl_ptr += 1
 
+        # ── 非选项普通图片注入（如思维导图、题干图片）──────────────────────────────
+        # 从 saved_images 中找出 option_label 为 None 的图片（非选项图片）
+        if saved_images:
+            non_option_images = [
+                img for img in saved_images
+                if img.get("option_label") is None
+            ]
+            if non_option_images:
+                print(f"[parse-multiple] 发现 {len(non_option_images)} 张非选项图片（如思维导图）")
+                img_ptr = 0
+                for q_idx, q in enumerate(questions):
+                    if img_ptr >= len(non_option_images):
+                        break
+                    # 检查该题的录题页是否有图片字段
+                    slot_has_image = False
+                    if parsed_slots and q_idx < len(parsed_slots):
+                        slot = parsed_slots[q_idx]
+                        slot_fields = slot.get("currentSlotFields", [])
+                        slot_has_image = any(
+                            f.get("role") == "image_url" or f == "image_url"
+                            for f in slot_fields
+                        ) if isinstance(slot_fields, list) else "image_url" in str(slot_fields)
+                    # 如果该题需要图片且还没有 image_url，则注入
+                    existing_img = (q.get("image_url") or "").strip()
+                    if slot_has_image and not existing_img:
+                        img_info = non_option_images[img_ptr]
+                        q["image_url"] = f"{_image_base_url}/api/images/{session_id}/{img_info['filename']}"
+                        print(f"[parse-multiple] 题目 {q_idx+1} 注入非选项图片: {img_info['filename']}")
+                        img_ptr += 1
+
         result = {"questions": questions}
         if debug_info is not None:
             result["debug_info"] = debug_info
