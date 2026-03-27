@@ -27,6 +27,7 @@ from pydantic import BaseModel
 from word_reader import (
     read_word_text, chunk_text, extract_word_images, extract_word_tables_as_images,
     read_pdf_text, extract_pdf_images, render_pdf_pages_as_images,
+    is_old_doc_format_bytes, read_doc_text_with_antiword,
 )
 from llm_extract import (
     extract_questions_from_word_chunks_async,
@@ -776,13 +777,53 @@ async def _read_pdf_content_with_images(content: bytes) -> tuple:
     return text, images, table_images
 
 
+
+
+async def _read_doc_content_with_antiword(content: bytes) -> tuple:
+    """使用 antiword 读取旧版 .doc 文件，返回 (text, [], [])。
+    
+    注意：antiword 只能提取文本，无法提取图片和表格。
+    """
+    import asyncio
+    
+    with tempfile.NamedTemporaryFile(suffix=".doc", delete=False) as fp:
+        fp.write(content)
+        tmp = fp.name
+    try:
+        text = await asyncio.to_thread(read_doc_text_with_antiword, tmp)
+    finally:
+        Path(tmp).unlink(missing_ok=True)
+    
+    # antiword 无法提取图片和表格，返回空列表
+    return text, [], []
+
+
 async def _read_file_content_with_images(content: bytes, filename: str) -> tuple:
     """根据文件类型读取内容，返回 (text, extracted_images, table_images)。"""
     ext = (filename or "").lower().split(".")[-1] if filename else ""
+    
     if ext == "pdf":
         return await _read_pdf_content_with_images(content)
-    else:
-        return await _read_word_content_with_images(content)
+    
+    # 检测是否为旧版 .doc 格式（OLE Compound Document）
+    if is_old_doc_format_bytes(content):
+        print(f"[file-detect] {filename} 是旧版 .doc 格式，使用 antiword 读取")
+        try:
+            return await _read_doc_content_with_antiword(content)
+        except RuntimeError as e:
+            # antiword 未安装或读取失败，返回友好提示
+            print(f"[file-detect] antiword 读取失败: {e}")
+            raise HTTPException(
+                400, 
+                detail={
+                    "error": "DOC_FORMAT_NOT_SUPPORTED",
+                    "message": f"文件「{filename}」是旧版 .doc 格式，且 antiword 未安装。请将文件另存为 .docx 格式后重新上传。",
+                    "suggestion": "convert",
+                }
+            )
+    
+    # .docx 格式，正常解析
+    return await _read_word_content_with_images(content)
 
 
 async def _parse_one_file(

@@ -1114,6 +1114,8 @@ chrome.runtime.onMessage.addListener((msg) => {
     setMsg("识别完成，正在自动填入录题页…", false);
     updateFillCacheDot();
     pushJsonHistory(JSON.stringify(msg.questions), msg.debug_info || null).catch(() => {});
+    // 标记已触发自动填入，避免 restoreParseState 重复填入
+    chrome.storage.local.set({ autoFillTriggered: true }).catch(() => {});
     // TTS 音频合成在 content.js 填充时异步进行
     doFill(msg.questions, true);
   }
@@ -2236,6 +2238,9 @@ async function doUploadAndFill(filesToUse) {
 
   setDropZoneState("parsing");
 
+  // 清除自动填入标记，以便新识别完成后能自动填入
+  chrome.storage.local.remove("autoFillTriggered").catch(() => {});
+
   chrome.runtime.sendMessage({ type: "START_PARSE", filesData, tabId: targetTabId || curTab?.id }).catch(() => {
     setDropZoneState("idle");
     setMsg("无法连接后台，请在 chrome://extensions 重新加载插件", true);
@@ -2270,7 +2275,23 @@ async function restoreParseState() {
     } catch (_) {}
   } else if (parseState.status === "done") {
     setDropZoneState("done", { questions: parseState.questions, debug_info: parseState.debug_info });
-    setMsg("上次识别结果仍可填入，或重新上传新文件。", false);
+    // 检查是否需要自动填入：如果 questions 存在且尚未填入过，则自动触发填入
+    const questions = parseState.questions;
+    if (questions && questions.length > 0) {
+      // 检查是否已经填入过（通过 storage 标记）
+      const { autoFillTriggered } = await chrome.storage.local.get("autoFillTriggered");
+      if (!autoFillTriggered) {
+        // 标记已触发自动填入，避免重复
+        await chrome.storage.local.set({ autoFillTriggered: true });
+        setMsg("识别完成，正在自动填入录题页…", false);
+        pushJsonHistory(JSON.stringify(questions), parseState.debug_info || null).catch(() => {});
+        doFill(questions, true);
+      } else {
+        setMsg("上次识别结果仍可填入，或重新上传新文件。", false);
+      }
+    } else {
+      setMsg("上次识别结果仍可填入，或重新上传新文件。", false);
+    }
   } else if (parseState.status === "error") {
     setMsg(parseState.text, true);
   }

@@ -293,6 +293,7 @@ const SECTION_LABEL_PATTERNS = [
   { pattern: /上传音频/i, label: "上传音频" },
   { pattern: /听力原文|原文\s*[：:]?/i, label: "听力原文" },
   { pattern: /设置题干|题干/i, label: "题干" },
+  { pattern: /转述开头/i, label: "转述开头" },
   { pattern: /参考单词|送评单词|送评词|参考词|关键字/i, label: "参考单词" },
   { pattern: /图片选项|选项.*图片|option.*image/i, label: "图片选项" },
   { pattern: /设置选项|选项\s*[A-D]?/i, label: "设置选项" },
@@ -2741,6 +2742,73 @@ async function runFill(questions, selectors, defaultAudioUrl, defaultImageUrl, d
 
     // ── 自动添加小题：若 JSON blanks 数量 > 页面 .question-part 数量，点击"添加小题"按钮 ──
     const blanksNeeded = (q.blanks || []).length;
+    
+    // 查找"添加小题"按钮的通用函数（提升到外层，供后续渐进式添加使用）
+    const findAddBtn = () => {
+      // 优先：直接在整个 document 中查找驰声平台的添加小题按钮
+      const chivoxBtn = document.querySelector("button.add-question, button[data-chivox-event*='addQuestion']");
+      if (chivoxBtn) {
+        log(`    找到驰声按钮: "${chivoxBtn.textContent?.trim()}" class="${chivoxBtn.className}"`);
+        return chivoxBtn;
+      }
+      
+      // 其次：在 document 中查找所有 button 标签
+      const buttons = document.querySelectorAll("button");
+      for (const el of buttons) {
+        const text = (el.textContent || "").trim();
+        if (/添加小题|新增小题|添加子题/i.test(text)) {
+          log(`    找到button: "${text}" class="${el.className?.slice(0,30)}"`);
+          return el;
+        }
+      }
+      
+      // 再次：查找 a 标签
+      const links = document.querySelectorAll("a");
+      for (const el of links) {
+        const text = (el.textContent || "").trim();
+        if (/添加小题|新增小题|添加子题/i.test(text) && text.length < 20) {
+          log(`    找到链接: "${text}" class="${el.className?.slice(0,30)}"`);
+          return el;
+        }
+      }
+      
+      // 兜底：查找任何包含"添加小题"文本的元素（但排除容器 div）
+      const allElements = document.querySelectorAll("button, a, span");
+      for (const el of allElements) {
+        const text = (el.textContent || "").trim();
+        if (text === "添加小题" || text === "新增小题") {
+          log(`    兜底找到: "${text}" tag=${el.tagName}`);
+          return el;
+        }
+      }
+      return null;
+    };
+    
+    // 检测页面是否有"添加小题需要先填选项"的验证逻辑
+    // 判断依据：1) 题型是 listening_choice；2) 页面有"设置选项"输入框
+    const checkNeedsProgressiveAdd = () => {
+      // 题型判断：listening_choice 需要渐进式添加
+      if (q.type === "listening_choice") return true;
+      
+      // 页面特征判断：有"设置选项"标签且有 A/B/C 输入框
+      const scope = document.querySelector(".topic-container, #topic-section, #right-container") || document.body;
+      const hasOptionInputs = scope.querySelectorAll("input[type='text']").length >= 3;
+      const hasOptionLabel = Array.from(scope.querySelectorAll(".caption, .col.caption, label")).some(el => 
+        /设置选项/.test(el.textContent || "")
+      );
+      // 检查是否有"设置答案"的 radio/checkbox（选择题特征）
+      const hasAnswerRadio = scope.querySelectorAll(".ui-radio, input[type='radio'], input[type='checkbox']").length > 0;
+      
+      if (hasOptionInputs && hasOptionLabel && hasAnswerRadio) {
+        log(`  检测到选择题特征（设置选项+答案radio），启用渐进式添加`);
+        return true;
+      }
+      return false;
+    };
+    
+    // 标记是否需要渐进式添加（填一个小题、添加一个小题）
+    let needsProgressiveAdd = false;
+    
     if (blanksNeeded > 0) {
       const scope = document.querySelector(".topic-container, #topic-section, #right-container") || document.body;
       let currentParts = scope.querySelectorAll(".question-part");
@@ -2751,138 +2819,124 @@ async function runFill(questions, selectors, defaultAudioUrl, defaultImageUrl, d
       if (initialPartCount < blanksNeeded) {
         log(`  页面有 ${initialPartCount} 个小题槽位，需要 ${blanksNeeded} 个，尝试添加`);
         
-        // 查找"添加小题"按钮
-        const findAddBtn = () => {
-          // 优先：直接在整个 document 中查找驰声平台的添加小题按钮
-          const chivoxBtn = document.querySelector("button.add-question, button[data-chivox-event*='addQuestion']");
-          if (chivoxBtn) {
-            log(`    找到驰声按钮: "${chivoxBtn.textContent?.trim()}" class="${chivoxBtn.className}"`);
-            return chivoxBtn;
-          }
-          
-          // 其次：在 document 中查找所有 button 标签
-          const buttons = document.querySelectorAll("button");
-          for (const el of buttons) {
-            const text = (el.textContent || "").trim();
-            if (/添加小题|新增小题|添加子题/i.test(text)) {
-              log(`    找到button: "${text}" class="${el.className?.slice(0,30)}"`);
-              return el;
-            }
-          }
-          
-          // 再次：查找 a 标签
-          const links = document.querySelectorAll("a");
-          for (const el of links) {
-            const text = (el.textContent || "").trim();
-            if (/添加小题|新增小题|添加子题/i.test(text) && text.length < 20) {
-              log(`    找到链接: "${text}" class="${el.className?.slice(0,30)}"`);
-              return el;
-            }
-          }
-          
-          // 兜底：查找任何包含"添加小题"文本的元素（但排除容器 div）
-          const allElements = document.querySelectorAll("button, a, span");
-          for (const el of allElements) {
-            const text = (el.textContent || "").trim();
-            if (text === "添加小题" || text === "新增小题") {
-              log(`    兜底找到: "${text}" tag=${el.tagName}`);
-              return el;
-            }
-          }
-          return null;
-        };
+        // 检查是否需要渐进式添加
+        needsProgressiveAdd = checkNeedsProgressiveAdd();
         
-        let addSubBtn = findAddBtn();
-        if (addSubBtn) {
-          const toAdd = blanksNeeded - initialPartCount;
-          log(`  需要添加 ${toAdd} 个小题`);
-          
-          // 逐个添加小题，每次添加后等待 DOM 更新
-          for (let addIdx = 0; addIdx < toAdd; addIdx++) {
-            // 每次点击前重新查找按钮（防止 DOM 重渲染后按钮引用失效）
-            log(`    准备添加第 ${addIdx + 1}/${toAdd} 个小题...`);
-            addSubBtn = findAddBtn();
-            if (!addSubBtn) {
-              log(`    第 ${addIdx + 1} 次添加时未找到按钮，尝试等待后重试...`);
-              await delay(500);
+        if (needsProgressiveAdd) {
+          log(`  题型 ${q.type} 需要渐进式添加小题（填一个、添加一个），跳过批量添加`);
+          // 不在这里添加小题，而是在填充选项后逐个添加
+        } else {
+          // 原有逻辑：批量添加所有小题
+          let addSubBtn = findAddBtn();
+          if (addSubBtn) {
+            const toAdd = blanksNeeded - initialPartCount;
+            log(`  需要添加 ${toAdd} 个小题`);
+            
+            // 逐个添加小题，每次添加后等待 DOM 更新
+            for (let addIdx = 0; addIdx < toAdd; addIdx++) {
+              // 每次点击前重新查找按钮（防止 DOM 重渲染后按钮引用失效）
+              log(`    准备添加第 ${addIdx + 1}/${toAdd} 个小题...`);
               addSubBtn = findAddBtn();
               if (!addSubBtn) {
-                log(`    重试后仍未找到按钮，停止添加`);
-                break;
+                log(`    第 ${addIdx + 1} 次添加时未找到按钮，尝试等待后重试...`);
+                await delay(500);
+                addSubBtn = findAddBtn();
+                if (!addSubBtn) {
+                  log(`    重试后仍未找到按钮，停止添加`);
+                  break;
+                }
+              }
+              
+              // 记录点击前的小题数
+              const currentScope = document.querySelector(".topic-container, #topic-section, #right-container") || document.body;
+              const partsBefore = currentScope.querySelectorAll(".question-part").length;
+              
+              // 直接使用 click() 方法
+              addSubBtn.click();
+              log(`    点击"添加小题" (${addIdx + 1}/${toAdd})，点击前小题数: ${partsBefore}`);
+              
+              // 等待 DOM 更新
+              await delay(1200);
+              
+              // 验证小题是否已添加
+              const partsAfter = currentScope.querySelectorAll(".question-part").length;
+              log(`    点击后小题数: ${partsAfter}`);
+              
+              // 如果小题数量没有增加，可能是需要先填选项，切换到渐进式模式
+              if (partsAfter <= partsBefore) {
+                // 检查是否有错误提示
+                const errorSpan = document.querySelector("span.error, .error-tip, .el-message--error");
+                if (errorSpan && errorSpan.offsetParent !== null) {
+                  const errorText = (errorSpan.textContent || "").trim();
+                  log(`    检测到错误提示: "${errorText}"，切换到渐进式添加模式`);
+                  needsProgressiveAdd = true;
+                  break;
+                }
+                
+                log(`    小题数量未增加 (${partsBefore} -> ${partsAfter})，额外等待...`);
+                await delay(1000);
+                const partsRetry = currentScope.querySelectorAll(".question-part").length;
+                log(`    额外等待后小题数: ${partsRetry}`);
+                
+                // 如果仍然没有增加，切换到渐进式模式
+                if (partsRetry <= partsBefore) {
+                  log(`    多次尝试后小题数仍未增加，切换到渐进式添加模式`);
+                  needsProgressiveAdd = true;
+                  break;
+                }
               }
             }
             
-            // 记录点击前的小题数
-            const currentScope = document.querySelector(".topic-container, #topic-section, #right-container") || document.body;
-            const partsBefore = currentScope.querySelectorAll(".question-part").length;
-            
-            // 直接使用 click() 方法
-            addSubBtn.click();
-            log(`    点击"添加小题" (${addIdx + 1}/${toAdd})，点击前小题数: ${partsBefore}`);
-            
-            // 等待 DOM 更新
-            await delay(1200);
-            
-            // 验证小题是否已添加
-            const partsAfter = currentScope.querySelectorAll(".question-part").length;
-            log(`    点击后小题数: ${partsAfter}`);
-            
-            // 如果小题数量没有增加，多等一会儿
-            if (partsAfter <= partsBefore) {
-              log(`    小题数量未增加 (${partsBefore} -> ${partsAfter})，额外等待...`);
-              await delay(1000);
-              const partsRetry = currentScope.querySelectorAll(".question-part").length;
-              log(`    额外等待后小题数: ${partsRetry}`);
-            }
-          }
-          
-          // 所有小题添加完成后，等待页面完全稳定
-          await delay(2000);
-          
-          // 再次验证小题数量
-          const scopeAfterWait = document.querySelector(".topic-container, #topic-section, #right-container") || document.body;
-          const partsAfterWait = scopeAfterWait.querySelectorAll(".question-part").length;
-          log(`  等待后最终小题数: ${partsAfterWait}`);
-          
-          // 验证最终小题数量
-          const finalParts = scope.querySelectorAll(".question-part");
-          log(`  添加完成，最终小题数: ${finalParts.length} (需要 ${blanksNeeded})`);
-          
-          // 完全重新检测表单（用新的选择器替换旧的 blank_* 字段）
-          try {
-            // 先清除旧的 blank_* 选择器
-            for (const k of Object.keys(curSel)) {
-              if (k.startsWith('blank_')) {
-                delete curSel[k];
-              }
-            }
-            
-            // 重新检测表单
-            const { selectors: fresh, fields: freshFields } = detectForm();
-            log(`  重新检测表单: selectors=${Object.keys(fresh || {}).length}, fields=${freshFields?.length || 0}`);
-            
-            if (fresh && Object.keys(fresh).length > 0) {
-              // 合并所有新检测到的选择器
-              for (const [k, v] of Object.entries(fresh)) {
-                if (v) curSel[k] = v;
-              }
-            }
-            
-            // 打印关键字段更新状态
-            const questionSel = fresh.question || "(未检测到)";
-            const questionExists = fresh.question ? !!document.querySelector(fresh.question) : false;
-            log(`  重检 question: sel=${questionSel.slice(0,50)}, DOM存在=${questionExists}, curSel.question=${(curSel.question||"无").slice(0,50)}`);
+            if (!needsProgressiveAdd) {
+              // 所有小题添加完成后，等待页面完全稳定
+              await delay(2000);
+              
+              // 再次验证小题数量
+              const scopeAfterWait = document.querySelector(".topic-container, #topic-section, #right-container") || document.body;
+              const partsAfterWait = scopeAfterWait.querySelectorAll(".question-part").length;
+              log(`  等待后最终小题数: ${partsAfterWait}`);
+              
+              // 验证最终小题数量
+              const finalParts = scope.querySelectorAll(".question-part");
+              log(`  添加完成，最终小题数: ${finalParts.length} (需要 ${blanksNeeded})`);
+              
+              // 完全重新检测表单（用新的选择器替换旧的 blank_* 字段）
+              try {
+                // 先清除旧的 blank_* 选择器
+                for (const k of Object.keys(curSel)) {
+                  if (k.startsWith('blank_')) {
+                    delete curSel[k];
+                  }
+                }
+                
+                // 重新检测表单
+                const { selectors: fresh, fields: freshFields } = detectForm();
+                log(`  重新检测表单: selectors=${Object.keys(fresh || {}).length}, fields=${freshFields?.length || 0}`);
+                
+                if (fresh && Object.keys(fresh).length > 0) {
+                  // 合并所有新检测到的选择器
+                  for (const [k, v] of Object.entries(fresh)) {
+                    if (v) curSel[k] = v;
+                  }
+                }
+                
+                // 打印关键字段更新状态
+                const questionSel = fresh.question || "(未检测到)";
+                const questionExists = fresh.question ? !!document.querySelector(fresh.question) : false;
+                log(`  重检 question: sel=${questionSel.slice(0,50)}, DOM存在=${questionExists}, curSel.question=${(curSel.question||"无").slice(0,50)}`);
 
-            const blankKeys = Object.keys(curSel).filter(k => k.startsWith('blank_')).sort();
-            log(`  blank 相关选择器 (${blankKeys.length} 个):`);
-            for (const bk of blankKeys) {
-              log(`    ${bk}: ${curSel[bk]?.slice(0, 60)}${curSel[bk]?.length > 60 ? '...' : ''}`);
+                const blankKeys = Object.keys(curSel).filter(k => k.startsWith('blank_')).sort();
+                log(`  blank 相关选择器 (${blankKeys.length} 个):`);
+                for (const bk of blankKeys) {
+                  log(`    ${bk}: ${curSel[bk]?.slice(0, 60)}${curSel[bk]?.length > 60 ? '...' : ''}`);
+                }
+              } catch (e) { 
+                log(`  detectForm 报错: ${e?.message}`); 
+              }
             }
-          } catch (e) { 
-            log(`  detectForm 报错: ${e?.message}`); 
+          } else {
+            log(`  未找到"添加小题"按钮`);
           }
-        } else {
-          log(`  未找到"添加小题"按钮`);
         }
       }
     }
@@ -3014,7 +3068,12 @@ async function runFill(questions, selectors, defaultAudioUrl, defaultImageUrl, d
         // 但 listening_response 和询问信息类型除外，它们的子题 question 需要单独合成
         if (!blankScript && blankQuestion.length > 0 && (!topHasListeningScript || needsSubQuestionTts)) {
           blankScript = blankQuestion;
-          log(`    子题 ${bi + 1}: ${needsSubQuestionTts ? '需要子题TTS的题型' : '顶层无共享原文'}，使用题干作为 TTS 文本`);
+          log(`    子题 ${bi + 1}: ${needsSubQuestionTts ? '需要子题TTS的题型' : '顶层无共享原文'}，使用小题题干作为 TTS 文本`);
+        }
+        // 兜底：小题没有 listening_script 和 question 时，使用题目的 question（题干）
+        if (!blankScript && q.question && q.question.trim().length > 0) {
+          blankScript = q.question.trim();
+          log(`    子题 ${bi + 1}: 小题无原文和题干，使用题目题干作为 TTS 文本`);
         }
         // 无听力原文时，用答案合成音频（如 listening_fill_and_retell 第2小题的参考答案）
         if (!blankScript && blank.answer) {
@@ -3070,6 +3129,47 @@ async function runFill(questions, selectors, defaultAudioUrl, defaultImageUrl, d
         }
       }
       
+    } else if (blanks.length === 0 && hasBlankAudioSelectors) {
+      // 特殊情况：JSON 的 blanks 为空，但页面有小题音频选择器
+      // 这种情况下，使用顶层的 question 为每个小题音频选择器合成 TTS
+      log(`  第 ${i + 1} 题：blanks为空但页面有小题音频选择器，尝试用顶层题干为小题合成TTS`);
+      
+      const topQuestion = (q.question || "").trim();
+      if (topQuestion.length > 0) {
+        for (const audioKey of blankAudioKeys) {
+          const blankAudioSel = curSel[audioKey];
+          if (!blankAudioSel) continue;
+          
+          const keyMatch = audioKey.match(/^blank_audio_(\d+)$/);
+          const blankIdx = keyMatch ? parseInt(keyMatch[1], 10) : 0;
+          
+          log(`    小题 ${blankIdx}: 使用顶层题干作为 TTS 文本: "${topQuestion.slice(0, 50)}..."`);
+          
+          const ttsPromiseForBlank = (async () => {
+            const ttsText = prepareTtsText(topQuestion);
+            const isDialogue = /^[WwMmQqAa][：:]/m.test(ttsText);
+            
+            const audioBase64 = await ttsWithRetry({
+              text: ttsText,
+              dialogue: isDialogue,
+              provider: ttsProvider,
+              femaleVoice: ttsFemaleVoice,
+              maleVoice: ttsMaleVoice,
+              femaleSpeed: ttsFemaleSpeed,
+              maleSpeed: ttsMaleSpeed,
+              femaleVolume: ttsFemaleVolume,
+              maleVolume: ttsMaleVolume,
+              contextTexts: ttsContextTexts,
+            }, 3, `    小题 ${blankIdx}: `, log);
+            
+            return { index: blankIdx - 1, audioBase64: audioBase64 || null, selector: blankAudioSel };
+          })();
+          
+          blanksTtsPromises.push(ttsPromiseForBlank);
+        }
+      } else {
+        log(`  第 ${i + 1} 题：blanks为空且顶层无题干，跳过小题TTS`);
+      }
     }
 
     // 通用处理：如果顶层没有 listening_script，也没有子题需要 TTS，但有 question（题干），就用题干来合成音频
@@ -3752,6 +3852,11 @@ async function runFill(questions, selectors, defaultAudioUrl, defaultImageUrl, d
           blankOpts = q.candidates;
           log(`  getValueForRole(${role}): 从顶层 q.candidates 取值`);
         }
+        // 再兜底：如果顶层 candidates 也没有，尝试从顶层 q.options 取值（listening_choice 等题型）
+        if (blankOpts.length === 0 && Array.isArray(q.options) && q.options.length > 0) {
+          blankOpts = q.options;
+          log(`  getValueForRole(${role}): 从顶层 q.options 取值`);
+        }
         log(`  getValueForRole(${role}): blankOpts长度=${blankOpts.length}, 内容=${JSON.stringify(blankOpts).slice(0,100)}`);
         if (blankOpts.length === 0) return "";
         // 去除选项前缀（如 "A. xxx" → "xxx"）并用 / 分隔
@@ -4069,7 +4174,228 @@ async function runFill(questions, selectors, defaultAudioUrl, defaultImageUrl, d
     // listening_response 类型不需要顶层 question 字段，只需要子题的 blank_question_N
     // 所以不再强制检测和添加 question 字段
     
-    for (const role of FILLABLE_ROLES) {
+    // ══════════════════════════════════════════════════════════════════════════════
+    // 渐进式添加小题模式：对于需要先填选项才能添加下一小题的题型（如 listening_choice）
+    // 按小题顺序填充：填完第1小题 → 添加第2小题 → 填完第2小题 → 添加第3小题 ...
+    // ══════════════════════════════════════════════════════════════════════════════
+    if (needsProgressiveAdd && blanksNeeded > 1) {
+      log(`=== 渐进式添加模式：需要 ${blanksNeeded} 个小题 ===`);
+      const blanks = q.blanks || [];
+      
+      // 辅助函数：填充单个小题的所有字段
+      const fillSinglePart = async (partIdx) => {
+        const n = partIdx + 1;
+        const b = blanks[partIdx];
+        if (!b) return;
+        
+        log(`  填充第 ${n} 小题...`);
+        
+        // 重新检测表单，获取当前小题的选择器
+        try {
+          document.querySelectorAll(".question-part").forEach((pt, pi) => pt.setAttribute("data-fill-part-idx", String(pi)));
+        } catch (_) {}
+        
+        const { selectors: freshSel } = detectForm();
+        if (freshSel) {
+          for (const [k, v] of Object.entries(freshSel)) {
+            if (v) curSel[k] = v;
+          }
+        }
+        
+        const scope = document.querySelector(".topic-container, #topic-section, #right-container") || document.body;
+        const parts = scope.querySelectorAll(".question-part");
+        const part = parts[partIdx];
+        if (!part) {
+          log(`    第 ${n} 小题 DOM 不存在，跳过`);
+          return;
+        }
+        
+        // 1. 填充选项 A/B/C/D
+        const opts = Array.isArray(b?.options) ? b.options
+          : (b?.option != null ? (Array.isArray(b.option) ? b.option : [b.option_a, b.option_b, b.option_c, b.option_d].filter(Boolean))
+          : (Array.isArray(q.options?.[partIdx]) ? q.options[partIdx] : []));
+        
+        const optionInputs = part.querySelectorAll("input[type='text']");
+        const optionRoles = ["option_a", "option_b", "option_c", "option_d"];
+        
+        for (let oi = 0; oi < Math.min(opts.length, optionInputs.length, 4); oi++) {
+          const optVal = stripOptPrefix(String(opts[oi] || "").trim());
+          if (!optVal) continue;
+          
+          const optInput = optionInputs[oi];
+          if (optInput) {
+            optInput.scrollIntoView({ block: "nearest", behavior: "auto" });
+            await delay(80);
+            optInput.focus();
+            await delay(50);
+            
+            // 清空并填入新值
+            optInput.value = "";
+            optInput.dispatchEvent(new Event("input", { bubbles: true }));
+            optInput.value = optVal;
+            optInput.dispatchEvent(new Event("input", { bubbles: true }));
+            optInput.dispatchEvent(new Event("change", { bubbles: true }));
+            
+            log(`    填充选项 ${optionRoles[oi]}: "${optVal.slice(0, 30)}"`);
+            await delay(100);
+          }
+        }
+        
+        // 2. 填充答案（点击 radio/checkbox）
+        const answerVal = b.answer != null ? String(b.answer).trim().toUpperCase() : "";
+        if (answerVal) {
+          const abcd = ["A", "B", "C", "D"];
+          const targetIdx = abcd.indexOf(answerVal);
+          if (targetIdx >= 0) {
+            // 查找答案区域的 radio 或 label
+            const answerRadios = part.querySelectorAll("input[type='radio'], input[type='checkbox']");
+            const answerLabels = part.querySelectorAll(".ui-radio label, label.radio-label, .answer-option label");
+            
+            if (answerLabels.length > targetIdx) {
+              answerLabels[targetIdx].click();
+              log(`    点击答案 label: ${answerVal}`);
+            } else if (answerRadios.length > targetIdx) {
+              const radio = answerRadios[targetIdx];
+              radio.checked = true;
+              radio.dispatchEvent(new Event("change", { bubbles: true }));
+              // 也尝试点击对应的 label
+              if (radio.id) {
+                const lbl = document.querySelector(`label[for="${radio.id}"]`);
+                if (lbl) lbl.click();
+              }
+              log(`    设置答案 radio: ${answerVal}`);
+            }
+            await delay(150);
+          }
+        }
+        
+        // 3. 填充题干（如果有）
+        const questionVal = (b.question || "").toString().trim();
+        if (questionVal) {
+          const questionTa = part.querySelector(".topicStem textarea, textarea.topicStem, .stem textarea");
+          if (questionTa) {
+            questionTa.focus();
+            await delay(100);
+            questionTa.value = questionVal;
+            questionTa.dispatchEvent(new Event("input", { bubbles: true }));
+            questionTa.dispatchEvent(new Event("change", { bubbles: true }));
+            log(`    填充题干: "${questionVal.slice(0, 30)}..."`);
+            await delay(100);
+          }
+        }
+        
+        log(`  第 ${n} 小题填充完成`);
+      };
+      
+      // 辅助函数：添加一个新小题
+      const addOnePart = async () => {
+        const addBtn = findAddBtn();
+        if (!addBtn) {
+          log(`    未找到"添加小题"按钮`);
+          return false;
+        }
+        
+        const scope = document.querySelector(".topic-container, #topic-section, #right-container") || document.body;
+        const partsBefore = scope.querySelectorAll(".question-part").length;
+        
+        addBtn.click();
+        log(`    点击"添加小题"，点击前小题数: ${partsBefore}`);
+        
+        await delay(1500);
+        
+        const partsAfter = scope.querySelectorAll(".question-part").length;
+        log(`    点击后小题数: ${partsAfter}`);
+        
+        if (partsAfter > partsBefore) {
+          return true;
+        }
+        
+        // 检查是否有错误提示
+        const errorSpan = document.querySelector("span.error, .error-tip, .el-message--error");
+        if (errorSpan && errorSpan.offsetParent !== null) {
+          log(`    添加失败，错误提示: "${(errorSpan.textContent || "").trim()}"`);
+        }
+        
+        return false;
+      };
+      
+      // 开始渐进式填充
+      const scope = document.querySelector(".topic-container, #topic-section, #right-container") || document.body;
+      let currentPartCount = scope.querySelectorAll(".question-part").length;
+      
+      for (let pi = 0; pi < blanksNeeded; pi++) {
+        // 如果当前小题不存在，需要先添加
+        if (pi >= currentPartCount) {
+          log(`  第 ${pi + 1} 小题不存在，尝试添加...`);
+          const added = await addOnePart();
+          if (added) {
+            currentPartCount++;
+            await delay(500);
+          } else {
+            log(`  添加第 ${pi + 1} 小题失败，停止渐进式填充`);
+            break;
+          }
+        }
+        
+        // 填充当前小题
+        await fillSinglePart(pi);
+        await delay(300);
+      }
+      
+      log(`=== 渐进式添加模式完成，最终小题数: ${scope.querySelectorAll(".question-part").length} ===`);
+      
+      // 重新检测表单，更新选择器
+      try {
+        document.querySelectorAll(".question-part").forEach((pt, pi) => pt.setAttribute("data-fill-part-idx", String(pi)));
+        const { selectors: freshSel } = detectForm();
+        if (freshSel) {
+          for (const [k, v] of Object.entries(freshSel)) {
+            if (v) curSel[k] = v;
+          }
+        }
+      } catch (e) {
+        log(`  重新检测表单报错: ${e?.message}`);
+      }
+      
+      // 渐进式模式下，跳过后续的选项和答案填充（已在上面处理过）
+      // 但仍需要填充其他字段（如 listening_script、explanation 等）
+      const skipRolesInProgressive = new Set([
+        "option_a", "option_b", "option_c", "option_d", "answer",
+        ...Array.from({ length: blanksNeeded }, (_, i) => `blank_answer_${i + 1}`),
+        ...Array.from({ length: blanksNeeded }, (_, i) => `blank_question_${i + 1}`)
+      ]);
+      
+      // 继续填充非小题相关的字段
+      for (const role of FILLABLE_ROLES) {
+        if (skipRolesInProgressive.has(role)) {
+          log(`  skip ${role} (渐进式模式已处理)`);
+          continue;
+        }
+        if (/^blank_(answer|question|option)_\d+$/.test(role)) {
+          log(`  skip ${role} (渐进式模式已处理)`);
+          continue;
+        }
+        
+        const selectorsForRole = qSel(curSel, role);
+        if (selectorsForRole.length === 0) continue;
+        
+        const value = getValueForRole(role);
+        if (!value) continue;
+        
+        log(`  填充 ${role}: "${String(value).slice(0, 40)}..."`);
+        for (const sel of selectorsForRole) {
+          const ok = fillField(sel, value);
+          if (ok) {
+            await delay(100);
+            break;
+          }
+        }
+      }
+    }
+    // ══════════════════════════════════════════════════════════════════════════════
+    // 常规模式：所有小题已存在，按 role 遍历填充
+    // ══════════════════════════════════════════════════════════════════════════════
+    else for (const role of FILLABLE_ROLES) {
       const selectorsForRole = qSel(curSel, role);
       log(`role=${role} sels=${selectorsForRole.length} sel0="${selectorsForRole[0]?.slice(0,50)}"`);
       if (selectorsForRole.length === 0) continue;
@@ -4404,8 +4730,8 @@ async function runFill(questions, selectors, defaultAudioUrl, defaultImageUrl, d
             // 从对应答案框的 placeholder 动态读取分隔符，兜底用 #
             let sep = "#";
             try {
-              const sel = selectorsForRole[j] || (curSel[`blank_answer_${j + 1}`] || "").split(",")[0];
-              const el = sel && document.querySelector(sel);
+              const sel = curSel[`blank_answer_${j + 1}`] || selectorsForRole[j];
+              const el = sel && document.querySelector(sel.split(",")[0]);
               const ph = el && (el.placeholder || el.getAttribute("placeholder") || "");
               const m = ph.match(/用['''"](.+?)['''"]分[隔开]/);
               if (m) sep = m[1];
@@ -4415,11 +4741,17 @@ async function runFill(questions, selectors, defaultAudioUrl, defaultImageUrl, d
           return String(b.answer).trim();
         };
         const values = (q.blanks?.length ? q.blanks.map((b, j) => blankAnswerToStr(b, j)) : q.answers.map((v) => (v != null ? String(v).trim() : ""))).map(sanitizeAnswerChars);
+        // 多小题时优先使用 blank_answer_N 选择器，兜底用 selectorsForRole
+        const blankAnswerSels = values.map((_, j) => curSel[`blank_answer_${j + 1}`] || selectorsForRole[j]);
+        log(`  多小题答案填充: values=${values.length}, blankAnswerSels=${blankAnswerSels.filter(Boolean).length}`);
         for (let j = 0; j < values.length; j++) {
-          const sel = selectorsForRole[j];
-          if (!sel || !values[j]) continue;
+          const sel = blankAnswerSels[j];
+          if (!sel || !values[j]) { 
+            log(`  fill answer[${j}] => skip (sel=${sel ? 'yes' : 'no'}, value=${values[j] ? 'yes' : 'no'})`);
+            continue; 
+          }
           const ok = fillField(sel, values[j]);
-          log(`  fill answer[${j}] => ${ok ? "ok" : "fail"} value="${String(values[j]).slice(0, 40)}${String(values[j]).length > 40 ? "…" : ""}"`);
+          log(`  fill answer[${j}] => ${ok ? "ok" : "fail"} sel="${sel.slice(0,40)}" value="${String(values[j]).slice(0, 40)}${String(values[j]).length > 40 ? "…" : ""}"`);
           if (ok) await delay(80);
         }
       } else if (role === "answer") {

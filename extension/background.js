@@ -550,8 +550,18 @@ async function handleParse(filesData) {
       let errDetail = `HTTP ${r.status}`;
       try {
         const body = await r.json();
-        errDetail = body?.detail?.error || body?.detail || body?.message || errDetail;
-      } catch {
+        console.log("[parse] 后端错误响应:", body);
+        // 检查是否是 .doc 格式不支持的错误
+        if (body?.detail?.error === "DOC_FORMAT_NOT_SUPPORTED") {
+          throw new Error("该文件是旧版 .doc 格式，无法直接解析。请打开文件后使用「截图识别」功能，或将文件另存为 .docx 格式后重新上传。");
+        }
+        // 其他错误，提取详情
+        errDetail = body?.detail?.message || body?.detail?.error || (typeof body?.detail === "string" ? body.detail : null) || body?.message || errDetail;
+      } catch (parseErr) {
+        // 如果是我们主动抛出的错误，直接重新抛出
+        if (parseErr.message?.includes(".doc 格式")) {
+          throw parseErr;
+        }
         errDetail = (await r.text().catch(() => errDetail)) || errDetail;
       }
       throw new Error(errDetail);

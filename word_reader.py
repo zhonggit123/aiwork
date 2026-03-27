@@ -1073,6 +1073,168 @@ def chunk_text(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# .doc 文件格式检测与转换
+# ─────────────────────────────────────────────────────────────────────────────
+
+def is_old_doc_format(file_path: str) -> bool:
+    """检测文件是否为旧版 .doc 格式（OLE Compound Document）。
+    
+    .doc 文件以 OLE 魔数开头：D0 CF 11 E0 A1 B1 1A E1
+    .docx 文件是 ZIP 格式，以 PK 开头：50 4B 03 04
+    """
+    path = Path(file_path)
+    if not path.exists():
+        return False
+    
+    with open(path, 'rb') as f:
+        header = f.read(8)
+    
+    # OLE Compound Document 魔数
+    ole_magic = b'\xD0\xCF\x11\xE0\xA1\xB1\x1A\xE1'
+    return header == ole_magic
+
+
+def is_old_doc_format_bytes(content: bytes) -> bool:
+    """检测字节内容是否为旧版 .doc 格式。"""
+    ole_magic = b'\xD0\xCF\x11\xE0\xA1\xB1\x1A\xE1'
+    return content[:8] == ole_magic
+
+
+def read_doc_text_with_antiword(doc_path: str) -> str:
+    """使用 antiword 读取旧版 .doc 文件的文本内容。
+    
+    Args:
+        doc_path: .doc 文件路径
+    
+    Returns:
+        文件的文本内容
+    
+    Raises:
+        RuntimeError: antiword 未安装或读取失败
+    """
+    import subprocess
+    import shutil
+    
+    # 查找 antiword
+    antiword = shutil.which('antiword')
+    if not antiword:
+        # 常见安装路径
+        for p in ['/opt/homebrew/bin/antiword', '/usr/local/bin/antiword', '/usr/bin/antiword']:
+            if Path(p).exists():
+                antiword = p
+                break
+    
+    if not antiword:
+        raise RuntimeError("antiword 未安装，无法读取 .doc 文件。请运行 'brew install antiword' 安装。")
+    
+    try:
+        result = subprocess.run(
+            [antiword, doc_path],
+            capture_output=True,
+            timeout=30,
+        )
+        if result.returncode != 0:
+            stderr = result.stderr.decode('utf-8', errors='ignore')
+            raise RuntimeError(f"antiword 读取失败: {stderr}")
+        
+        # antiword 输出可能是 UTF-8 或其他编码
+        text = result.stdout.decode('utf-8', errors='ignore')
+        return text.strip()
+    except subprocess.TimeoutExpired:
+        raise RuntimeError("antiword 读取超时")
+
+
+def convert_doc_to_pdf_with_libreoffice(doc_path: str, output_dir: str = None) -> str:
+    """使用 LibreOffice 将 .doc 文件转换为 PDF。
+    
+    Args:
+        doc_path: .doc 文件路径
+        output_dir: 输出目录，默认为临时目录
+    
+    Returns:
+        转换后的 PDF 文件路径
+    
+    Raises:
+        RuntimeError: LibreOffice 未安装或转换失败
+    """
+    import subprocess
+    import shutil
+    
+    # 查找 LibreOffice
+    soffice_paths = [
+        '/Applications/LibreOffice.app/Contents/MacOS/soffice',  # macOS
+        '/usr/bin/soffice',  # Linux
+        '/usr/bin/libreoffice',  # Linux alternative
+        'C:\\Program Files\\LibreOffice\\program\\soffice.exe',  # Windows
+    ]
+    
+    soffice = None
+    for p in soffice_paths:
+        if Path(p).exists():
+            soffice = p
+            break
+    
+    # 也尝试从 PATH 中查找
+    if not soffice:
+        soffice = shutil.which('soffice') or shutil.which('libreoffice')
+    
+    if not soffice:
+        import platform
+        system = platform.system()
+        if system == "Windows":
+            download_url = "https://www.libreoffice.org/download/download-libreoffice/?type=win-x86_64"
+            msg = (
+                "需要安装 LibreOffice 才能处理 .doc 文件。\n\n"
+                f"请下载安装：{download_url}\n\n"
+                "安装完成后重新上传文件即可。\n"
+                "或者将 .doc 文件用 Word 另存为 .docx 格式。"
+            )
+        elif system == "Darwin":
+            download_url = "https://www.libreoffice.org/download/download-libreoffice/?type=mac-aarch64"
+            msg = (
+                "需要安装 LibreOffice 才能处理 .doc 文件。\n\n"
+                f"请下载安装：{download_url}\n"
+                "或运行: brew install --cask libreoffice\n\n"
+                "安装完成后重新上传文件即可。\n"
+                "或者将 .doc 文件用 Word 另存为 .docx 格式。"
+            )
+        else:
+            msg = (
+                "需要安装 LibreOffice 才能处理 .doc 文件。\n\n"
+                "请运行: sudo apt install libreoffice\n\n"
+                "安装完成后重新上传文件即可。\n"
+                "或者将 .doc 文件用 Word 另存为 .docx 格式。"
+            )
+        raise RuntimeError(msg)
+    
+    import tempfile
+    if output_dir is None:
+        output_dir = tempfile.mkdtemp()
+    
+    # 使用 LibreOffice 转换
+    cmd = [
+        soffice,
+        '--headless',
+        '--convert-to', 'pdf',
+        '--outdir', output_dir,
+        doc_path
+    ]
+    
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+    if result.returncode != 0:
+        raise RuntimeError(f"LibreOffice 转换失败: {result.stderr}")
+    
+    # 找到输出的 PDF 文件
+    doc_name = Path(doc_path).stem
+    pdf_path = Path(output_dir) / f"{doc_name}.pdf"
+    
+    if not pdf_path.exists():
+        raise RuntimeError(f"转换后的 PDF 文件不存在: {pdf_path}")
+    
+    return str(pdf_path)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # PDF 文件读取支持
 # ─────────────────────────────────────────────────────────────────────────────
 
