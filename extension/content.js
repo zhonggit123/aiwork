@@ -3028,6 +3028,17 @@ async function runFill(questions, selectors, defaultAudioUrl, defaultImageUrl, d
       log(`  第 ${i + 1} 题：${isInquiryQuestion ? '询问信息题' : '页面无听力原文字段'}，使用题干作为 TTS 文本: "${listeningScriptValue.slice(0, 50)}..."`);
     }
     
+    // 通用兜底：listening_script 为空，但页面有音频输入框，且没有子题（或子题没有独立音频选择器）时
+    // 用 question（题干）作为 TTS 文本。这覆盖了所有需要音频但没有听力原文的题型。
+    const noBlanks = !q.blanks || q.blanks.length === 0;
+    const blankAudioKeysEarly = Object.keys(curSel).filter(k => /^blank_audio_\d+$/.test(k));
+    const noBlankAudioSelectors = blankAudioKeysEarly.length === 0;
+    const topHasAudioInputEarly = (qSel(curSel, "audio_url").length > 0 || qSel(curSel, "audio_file").length > 0);
+    if (!listeningScriptValue && topHasAudioInputEarly && (noBlanks || noBlankAudioSelectors) && q.question && q.question.trim().length > 0) {
+      listeningScriptValue = q.question.trim();
+      log(`  第 ${i + 1} 题：顶层有音频框但无听力原文，使用题干作为 TTS 文本: "${listeningScriptValue.slice(0, 50)}..."`);
+    }
+    
     // 调试日志：显示题目类型和所有相关字段
     log(`第 ${i + 1} 题详情: type="${q.type || '(无)'}", question="${(q.question || '').slice(0, 50)}", listening_script="${(q.listening_script || '').slice(0, 30)}", blanks=${q.blanks?.length || 0}, isInquiry=${isInquiryQuestion}`);
     
@@ -3104,7 +3115,7 @@ async function runFill(questions, selectors, defaultAudioUrl, defaultImageUrl, d
             if (ttsText !== blankScript) {
               log(`    子题 ${bi + 1}: 过滤音标后文本: "${ttsText.slice(0, 50)}..."`);
             }
-            const isDialogue = /^[WwMmQqAa][：:]/m.test(ttsText);
+            const isDialogue = /^(?:[WwMmQqAa][：:]|[Bb]oy[：:]|[Gg]irl[：:])/m.test(ttsText);
             
             const audioBase64 = await ttsWithRetry({
               text: ttsText,
@@ -3130,8 +3141,9 @@ async function runFill(questions, selectors, defaultAudioUrl, defaultImageUrl, d
       }
       
     } else if (blanks.length === 0 && hasBlankAudioSelectors) {
-      // 特殊情况：JSON 的 blanks 为空，但页面有小题音频选择器
-      // 这种情况下，使用顶层的 question 为每个小题音频选择器合成 TTS
+      // 特殊情况：JSON 的 blanks 为空，但页面有小题音频选择器（如"问题音频"）
+      // 无论页面是否有顶层音频输入框，都应该为子题合成 TTS（用题干）
+      // 因为顶层音频（如"听力音频"）和子题音频（如"问题音频"）是不同的字段
       log(`  第 ${i + 1} 题：blanks为空但页面有小题音频选择器，尝试用顶层题干为小题合成TTS`);
       
       const topQuestion = (q.question || "").trim();
@@ -3147,7 +3159,7 @@ async function runFill(questions, selectors, defaultAudioUrl, defaultImageUrl, d
           
           const ttsPromiseForBlank = (async () => {
             const ttsText = prepareTtsText(topQuestion);
-            const isDialogue = /^[WwMmQqAa][：:]/m.test(ttsText);
+            const isDialogue = /^(?:[WwMmQqAa][：:]|[Bb]oy[：:]|[Gg]irl[：:])/m.test(ttsText);
             
             const audioBase64 = await ttsWithRetry({
               text: ttsText,
@@ -3230,7 +3242,7 @@ async function runFill(questions, selectors, defaultAudioUrl, defaultImageUrl, d
         if (ttsText !== listeningScriptValue) {
           log(`  第 ${i + 1} 题：过滤音标后文本: "${ttsText.slice(0, 80)}..."`);
         }
-        const isDialogue = /^[WwMmQqAa][：:]/m.test(ttsText);
+        const isDialogue = /^(?:[WwMmQqAa][：:]|[Bb]oy[：:]|[Gg]irl[：:])/m.test(ttsText);
         log(`  第 ${i + 1} 题：发送 TTS 请求 (${ttsProvider})，文本长度=${ttsText.length}，isDialogue=${isDialogue}`);
         
         return await ttsWithRetry({
@@ -5629,44 +5641,20 @@ async function runFill(questions, selectors, defaultAudioUrl, defaultImageUrl, d
       if (!topicChanged) {
         log(`警告：25秒内左侧题号未变化，第 ${i + 1} 题可能保存失败（可能有必填项未填，如音频）`);
         
-        // 尝试手动点击左侧下一题题号来强制切题
-        const nextTopicIndex = prevTopicIdx + 1;
-        if (nextTopicIndex < topicNumbers.length) {
-          log(`  尝试手动点击左侧第 ${nextTopicIndex + 1} 题题号来强制切题...`);
-          const nextTopicBtn = topicNumbers[nextTopicIndex];
-          if (nextTopicBtn) {
-            nextTopicBtn.click();
-            await delay(1000);
-            const afterManualClick = getCurrentTopicIndex(findTopicNumbers());
-            if (afterManualClick === nextTopicIndex) {
-              log(`  手动切题成功: ${prevTopicIdx} → ${afterManualClick}`);
-              topicChanged = true;
-              // 切题成功，断开 MutationObserver
-              if (partBlockerObserver) {
-                partBlockerObserver.disconnect();
-                partBlockerObserver = null;
-                log(`  切题成功，已断开 MutationObserver`);
-              }
-            } else {
-              log(`  手动切题失败，题号仍为 ${afterManualClick}`);
-            }
-          }
-        }
-        
-        if (!topicChanged) {
-          notify(`第 ${i + 1} 题保存未自动跳转，已暂停。请手动补全后点弹窗「继续填充」`);
-          hideTtsStatus();
-          // 将剩余题目（不含当前失败的题）返回给 popup，由用户手动修复后点「继续填充」
-          if (partBlockerObserver) { partBlockerObserver.disconnect(); partBlockerObserver = null; }
-          restoreConfirm(); // 恢复原始 confirm
-          return {
-            ok: "paused",
-            filled,
-            pausedQuestion: i + 1,       // 1-based，展示给用户
-            remaining: questions.slice(i + 1), // 剩余待填题目
-            error: `第 ${i + 1} 题保存后未自动跳转，可能有必填项（如音频）未填。`,
-          };
-        }
+        // 不再尝试强制切题，直接暂停等待用户手动处理
+        // 因为强制切题会导致当前题目的填充内容丢失
+        notify(`第 ${i + 1} 题保存未自动跳转，已暂停。请手动补全后点弹窗「继续填充」`);
+        hideTtsStatus();
+        // 将剩余题目（不含当前失败的题）返回给 popup，由用户手动修复后点「继续填充」
+        if (partBlockerObserver) { partBlockerObserver.disconnect(); partBlockerObserver = null; }
+        restoreConfirm(); // 恢复原始 confirm
+        return {
+          ok: "paused",
+          filled,
+          pausedQuestion: i + 1,       // 1-based，展示给用户
+          remaining: questions.slice(i + 1), // 剩余待填题目
+          error: `第 ${i + 1} 题保存后未自动跳转，可能有必填项（如音频）未填。`,
+        };
       }
       // 题号切换后再等 800ms，让新题表单完成渲染（音频字段初始化需要更长时间）
       await delay(800);

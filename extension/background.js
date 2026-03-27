@@ -148,7 +148,11 @@ function normalizeQuestionsToSlots(questions, pageTotal, pageSlots, hasTopLevelA
       const slot = pageSlots[si];
       const need = (slot.subCount && slot.subCount > 1) ? slot.subCount : 1;
       if (hasBlanks(questions[qi])) { out.push(questions[qi]); qi++; continue; }
-      if (need === 1) {
+      // 某些题型本身就不应该有 blanks（如模仿朗读 reading_aloud），即使页面槽位需要多个小题，也不应合并
+      const singleQuestionTypes = ["reading_aloud", "reading_comprehension", "cloze", "vocabulary", "grammar"];
+      const curType = (questions[qi].type || "").toLowerCase();
+      const isSingleType = singleQuestionTypes.some(t => curType.includes(t));
+      if (need === 1 || isSingleType) {
         out.push(questions[qi]); qi++;
       } else {
         const group = questions.slice(qi, qi + need);

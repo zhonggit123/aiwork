@@ -315,16 +315,16 @@ def _parse_dialogue_lines(text: str) -> list[dict]:
     """解析对话文本，返回 [{ "speaker": "male"|"female", "text": "..." }, ...]。
     
     规则：
-    - W: / W： / Q: / Q： 开头 -> female
-    - M: / M： / A: / A： 开头 -> male
+    - W: / W： / Q: / Q： / Girl: 开头 -> female
+    - M: / M： / A: / A： / Boy: 开头 -> male
     - 无标记行 -> male (默认)
     - 连续同性别行合并为一段
     """
     lines = text.strip().split("\n")
     segments: list[dict] = []
     
-    female_pattern = re.compile(r"^[WwQq][：:]\s*")
-    male_pattern = re.compile(r"^[MmAa][：:]\s*")
+    female_pattern = re.compile(r"^(?:[WwQq][：:]|[Gg]irl[：:])\s*")
+    male_pattern = re.compile(r"^(?:[MmAa][：:]|[Bb]oy[：:])\s*")
     
     for line in lines:
         line = line.strip()

@@ -1114,8 +1114,6 @@ chrome.runtime.onMessage.addListener((msg) => {
     setMsg("识别完成，正在自动填入录题页…", false);
     updateFillCacheDot();
     pushJsonHistory(JSON.stringify(msg.questions), msg.debug_info || null).catch(() => {});
-    // 标记已触发自动填入，避免 restoreParseState 重复填入
-    chrome.storage.local.set({ autoFillTriggered: true }).catch(() => {});
     // TTS 音频合成在 content.js 填充时异步进行
     doFill(msg.questions, true);
   }
@@ -1767,7 +1765,12 @@ function normalizeQuestionsToSlots(questions, pageTotal, pageSlots, hasTopLevelA
         qi++;
         continue;
       }
-      if (need === 1) {
+      // 某些题型本身就不应该有 blanks（如模仿朗读 reading_aloud），即使页面槽位需要多个小题，也不应合并
+      // 这些题型的 blanks 为空是正常的，不应该被合并到其他题
+      const singleQuestionTypes = ["reading_aloud", "reading_comprehension", "cloze", "vocabulary", "grammar"];
+      const curType = (questions[qi].type || "").toLowerCase();
+      const isSingleType = singleQuestionTypes.some(t => curType.includes(t));
+      if (need === 1 || isSingleType) {
         out.push(questions[qi]);
         qi++;
       } else {
@@ -2114,7 +2117,7 @@ async function doFill(questions, skipTts = false) {
   }
 
   const { 
-    selectors, pageQuestionTotal, pageSlots, defaultAudioUrl, defaultImageUrl, hasTopLevelAudio,
+    selectors: storedSelectors, pageQuestionTotal, pageSlots, defaultAudioUrl, defaultImageUrl, hasTopLevelAudio,
     ttsProvider: ttsProvider2, ttsFemaleVoice, ttsMaleVoice, 
     ttsFemaleVoiceYoudao: ttsFemaleVoiceYoudao2, ttsMaleVoiceYoudao: ttsMaleVoiceYoudao2,
     ttsFemaleVoiceEdge: ttsFemaleVoiceEdge2, ttsMaleVoiceEdge: ttsMaleVoiceEdge2,
@@ -2125,6 +2128,20 @@ async function doFill(questions, skipTts = false) {
     "ttsFemaleVoiceEdge", "ttsMaleVoiceEdge",
     "ttsFemaleSpeed", "ttsMaleSpeed", "ttsFemaleVolume", "ttsMaleVolume", "ttsContextTexts"
   ]);
+  
+  // 实时检测当前页面的选择器（与高级填充一致），避免使用之前保存的选择器导致误判
+  // 因为用户可能已经切换到不同的题目，页面结构已经变化
+  let selectors = storedSelectors;
+  try {
+    const res = await chrome.tabs.sendMessage(tabId, { type: "DETECT_FORM" });
+    if (res?.ok && res.selectors && Object.keys(res.selectors).length > 0) {
+      selectors = res.selectors;
+      console.log("[doFill] 使用实时检测的选择器");
+    }
+  } catch (_) {
+    console.log("[doFill] 实时检测失败，使用存储的选择器");
+  }
+  
   // 未检测过页面结构时给出提示，但不阻断填充（content.js 内 runFill 会再次 detectForm 新检测）
   const hasStructure = selectors && Object.values(selectors).some(Boolean);
   if (!hasStructure) {
@@ -2238,9 +2255,6 @@ async function doUploadAndFill(filesToUse) {
 
   setDropZoneState("parsing");
 
-  // 清除自动填入标记，以便新识别完成后能自动填入
-  chrome.storage.local.remove("autoFillTriggered").catch(() => {});
-
   chrome.runtime.sendMessage({ type: "START_PARSE", filesData, tabId: targetTabId || curTab?.id }).catch(() => {
     setDropZoneState("idle");
     setMsg("无法连接后台，请在 chrome://extensions 重新加载插件", true);
@@ -2275,23 +2289,8 @@ async function restoreParseState() {
     } catch (_) {}
   } else if (parseState.status === "done") {
     setDropZoneState("done", { questions: parseState.questions, debug_info: parseState.debug_info });
-    // 检查是否需要自动填入：如果 questions 存在且尚未填入过，则自动触发填入
-    const questions = parseState.questions;
-    if (questions && questions.length > 0) {
-      // 检查是否已经填入过（通过 storage 标记）
-      const { autoFillTriggered } = await chrome.storage.local.get("autoFillTriggered");
-      if (!autoFillTriggered) {
-        // 标记已触发自动填入，避免重复
-        await chrome.storage.local.set({ autoFillTriggered: true });
-        setMsg("识别完成，正在自动填入录题页…", false);
-        pushJsonHistory(JSON.stringify(questions), parseState.debug_info || null).catch(() => {});
-        doFill(questions, true);
-      } else {
-        setMsg("上次识别结果仍可填入，或重新上传新文件。", false);
-      }
-    } else {
-      setMsg("上次识别结果仍可填入，或重新上传新文件。", false);
-    }
+    // 不再自动填入，只显示提示，让用户手动点击填入按钮
+    setMsg("上次识别结果仍可填入，或重新上传新文件。", false);
   } else if (parseState.status === "error") {
     setMsg(parseState.text, true);
   }
