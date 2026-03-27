@@ -80,15 +80,90 @@ def _register_image_session(session_id: str) -> None:
             pass
 
 
-def _save_option_images(extracted_images: list, session_id: str) -> list:
-    """将提取到的图片字节写入会话临时目录，返回带 filename 字段的列表（去除 image_bytes）。"""
+def _resize_image_to_fit(image_bytes: bytes, max_width: int = 720, max_height: int = 480) -> bytes:
+    """等比缩放图片，使其适配目标尺寸（不拉伸变形）。
+    
+    图片会被缩放到能完全放入 max_width x max_height 的最大尺寸，
+    同时保持原始宽高比。如果图片本身小于目标尺寸，则不放大。
+    
+    Args:
+        image_bytes: 原始图片字节
+        max_width: 最大宽度（默认 720）
+        max_height: 最大高度（默认 480）
+    
+    Returns:
+        缩放后的 JPEG 图片字节
+    """
+    import io
+    from PIL import Image
+    
+    try:
+        img = Image.open(io.BytesIO(image_bytes))
+        orig_w, orig_h = img.size
+        
+        # 计算缩放比例（等比缩放，取较小的比例以确保图片完全放入目标区域）
+        scale_w = max_width / orig_w
+        scale_h = max_height / orig_h
+        scale = min(scale_w, scale_h)
+        
+        # 只缩小不放大（如果图片本身小于目标尺寸，保持原尺寸）
+        if scale >= 1.0:
+            # 图片已经足够小，只需转换格式
+            if img.mode == 'RGBA':
+                bg = Image.new('RGB', img.size, (255, 255, 255))
+                bg.paste(img, mask=img.split()[3])
+                img = bg
+            elif img.mode != 'RGB':
+                img = img.convert('RGB')
+            out = io.BytesIO()
+            img.save(out, format='JPEG', quality=90, optimize=True)
+            return out.getvalue()
+        
+        # 计算新尺寸
+        new_w = int(orig_w * scale)
+        new_h = int(orig_h * scale)
+        
+        # 转换颜色模式
+        if img.mode == 'RGBA':
+            bg = Image.new('RGB', img.size, (255, 255, 255))
+            bg.paste(img, mask=img.split()[3])
+            img = bg
+        elif img.mode != 'RGB':
+            img = img.convert('RGB')
+        
+        # 使用高质量缩放
+        img_resized = img.resize((new_w, new_h), Image.Resampling.LANCZOS)
+        
+        out = io.BytesIO()
+        img_resized.save(out, format='JPEG', quality=90, optimize=True)
+        print(f"[resize] 图片从 {orig_w}x{orig_h} 等比缩放到 {new_w}x{new_h}")
+        return out.getvalue()
+    except Exception as e:
+        print(f"[resize] 缩放失败: {e}，返回原图")
+        return image_bytes
+
+
+def _save_option_images(extracted_images: list, session_id: str, resize: bool = True) -> list:
+    """将提取到的图片字节写入会话临时目录，返回带 filename 字段的列表（去除 image_bytes）。
+    
+    Args:
+        extracted_images: 提取的图片列表
+        session_id: 会话 ID
+        resize: 是否等比缩放图片以适配目标尺寸（默认 True）
+    """
     session_dir = _get_image_session_dir(session_id)
     saved = []
     for item in extracted_images:
-        ext = item.get("image_ext", "jpg")
+        image_bytes = item["image_bytes"]
+        
+        # 等比缩放图片
+        if resize:
+            image_bytes = _resize_image_to_fit(image_bytes, max_width=720, max_height=480)
+        
+        ext = "jpg"  # 缩放后统一为 JPEG
         filename = f"img_{item['image_index']:04d}.{ext}"
         dest = session_dir / filename
-        dest.write_bytes(item["image_bytes"])
+        dest.write_bytes(image_bytes)
         saved.append({
             "para_index": item["para_index"],
             "para_text": item["para_text"],

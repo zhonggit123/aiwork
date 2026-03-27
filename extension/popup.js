@@ -26,7 +26,8 @@ const statusBadge = document.getElementById("statusBadge");
  */
 function slimSlotsForStorage(slots) {
   if (!slots) return null;
-  return slots.map(s => ({
+  return slots.map((s, i) => ({
+    index:     s.index ?? (i + 1),  // 保留题目序号，用于显示"第X题"
     subCount:  s.subCount,
     typeHint:  s.typeHint  || undefined,
     typeCode:  s.typeCode  || undefined,
@@ -403,7 +404,7 @@ restoreParseState();
 
   // TTS 默认值
   const TTS_DEFAULTS = {
-    provider: "doubao",
+    provider: "edge",  // 默认使用微软 Edge TTS
     // 豆包默认音色
     femaleVoice: "S_hWsL9lNS1",  // chivox 女声（声音复刻）
     maleVoice: "S_iWsL9lNS1",    // chivox 男声（声音复刻）
@@ -411,7 +412,7 @@ restoreParseState();
     femaleVoiceYoudao: "youxiaodao",
     maleVoiceYoudao: "youxiaoguan",
     // 微软 Edge TTS 默认音色（英文）
-    femaleVoiceEdge: "en-US-AvaMultilingualNeural",
+    femaleVoiceEdge: "en-US-AvaMultilingualNeural",  // Ava 多语言
     maleVoiceEdge: "en-US-GuyNeural",
     femaleSpeed: "0.85",
     maleSpeed: "0.85",
