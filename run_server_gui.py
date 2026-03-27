@@ -28,7 +28,7 @@ import subprocess
 
 
 class ServerGUI:
-    VERSION = "7.2.5"
+    VERSION = "7.2.6"
     
     def __init__(self, root):
         self.root = root
@@ -157,16 +157,19 @@ class ServerGUI:
         def run_server():
             try:
                 import uvicorn
+                from app import app
                 self.server_running = True
                 self.root.after(0, self.update_ui_running)
                 uvicorn.run(
-                    "app:app",
+                    app,
                     host="0.0.0.0",
                     port=8766,
                     log_level="info",
                 )
             except Exception as e:
-                self.root.after(0, lambda: messagebox.showerror("错误", f"服务启动失败:\n{e}"))
+                import traceback
+                err_msg = f"服务启动失败:\n{e}\n\n{traceback.format_exc()}"
+                self.root.after(0, lambda: messagebox.showerror("错误", err_msg))
             finally:
                 self.server_running = False
                 self.root.after(0, self.update_ui_stopped)
