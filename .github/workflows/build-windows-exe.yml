@@ -29,12 +29,12 @@ jobs:
           pip install -r requirements.txt
           pip install pyinstaller
 
-      - name: 打包 exe
+      - name: 打包 GUI 版 exe
         run: |
-          pyinstaller 题库后端.spec
+          pyinstaller run_server_gui.spec
 
       - name: 上传 exe 为 Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: QuestionBank-Backend-Windows
-          path: dist/题库后端.exe
+          name: 题库录入服务-Windows
+          path: dist/题库录入服务.exe
