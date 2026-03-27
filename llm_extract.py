@@ -153,6 +153,41 @@ def _sanitize_question_texts(q: Dict[str, Any]) -> None:
                 blank["candidates"] = [_sanitize_english_punctuation(x) for x in blank["candidates"]]
 
 
+def _align_answer_to_candidates(q: Dict[str, Any]) -> None:
+    """确保 listening_response 题型的 answer 与 candidates 中的某一项精确匹配。
+    
+    AI 返回的 answer 可能缺少末尾标点（如 "Mr Smith" vs "Mr Smith."），
+    导致录题页校验失败（"至少需要一个答案和选项中的一致"）。
+    此函数通过模糊匹配找到最接近的 candidate，并用其替换 answer。
+    """
+    if q.get("type") != "listening_response":
+        return
+    candidates = q.get("candidates")
+    if not isinstance(candidates, list) or not candidates:
+        return
+    answer = q.get("answer")
+    if not isinstance(answer, str) or not answer.strip():
+        return
+    answer = answer.strip()
+    # 已经精确匹配，无需修复
+    if answer in candidates:
+        return
+    # 尝试模糊匹配：忽略末尾标点和大小写
+    def normalize(s: str) -> str:
+        return s.strip().rstrip(".,!?;:").lower()
+    norm_answer = normalize(answer)
+    for cand in candidates:
+        if normalize(cand) == norm_answer:
+            q["answer"] = cand
+            return
+    # 进一步宽松匹配：answer 是 candidate 的子串或反之
+    for cand in candidates:
+        norm_cand = normalize(cand)
+        if norm_answer in norm_cand or norm_cand in norm_answer:
+            q["answer"] = cand
+            return
+
+
 def _slot_type_to_json_type(slot: Dict[str, Any]) -> str:
     """从录题页槽位的 typeHint/推断类型 映射为 JSON 的 type 字段。"""
     section_labels = slot.get("sectionLabels") or []
@@ -222,6 +257,7 @@ def _normalize_questions(questions: List[Dict[str, Any]]) -> List[Dict[str, Any]
         if not isinstance(q, dict):
             continue
         _sanitize_question_texts(q)
+        _align_answer_to_candidates(q)  # 确保听后应答题 answer 与 candidates 精确匹配
         q["question"] = _strip_leading_question_no(q.get("question", ""))
         if "keyword" in q and q.get("keyword") is None:
             q["keyword"] = ""

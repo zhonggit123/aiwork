@@ -1052,18 +1052,31 @@ function detectForm() {
         }
       }
     }
-    if (needOptions && /设置选项|选项/.test(capText)) {
+    if (/设置选项|选项/.test(capText) && !/图片选项/.test(capText)) {
       const inputs = [...row.querySelectorAll("input[type='text'], input.txt, textarea")];
-      const roleByIndex = ["option_a", "option_b", "option_c", "option_d"];
-      inputs.slice(0, 4).forEach((el, i) => {
-        const r = roleByIndex[i];
-        if (!r || selectors[r]) return;
-        const sel = getSelector(el);
-        if (!sel || seen.has(sel)) return;
-        seen.add(sel);
-        selectors[r] = sel;
-        fields.push({ role: r, selector: sel, label: r });
-      });
+      // 听后应答题：如果只有一个 textarea 且还没有检测到 candidates，当作 candidates
+      if (inputs.length === 1 && inputs[0].tagName === "TEXTAREA" && !selectors.candidates) {
+        const ta = inputs[0];
+        const sel = getSelector(ta);
+        if (sel && !seen.has(sel)) {
+          seen.add(sel);
+          selectors.candidates = sel;
+          fields.push({ role: "candidates", selector: sel, label: "设置选项(候选答案)" });
+        }
+      }
+      // 选择题：如果需要选项，当作 option_a/b/c/d（恢复原来的逻辑）
+      if (needOptions) {
+        const roleByIndex = ["option_a", "option_b", "option_c", "option_d"];
+        inputs.slice(0, 4).forEach((el, i) => {
+          const r = roleByIndex[i];
+          if (!r || selectors[r]) return;
+          const sel = getSelector(el);
+          if (!sel || seen.has(sel)) return;
+          seen.add(sel);
+          selectors[r] = sel;
+          fields.push({ role: r, selector: sel, label: r });
+        });
+      }
     }
     if (!selectors.explanation && /解析/.test(capText)) {
       const ed = row.querySelector("textarea, [contenteditable=true], script[type='text/plain'][id], div.edui-default[id]");
@@ -3720,6 +3733,21 @@ async function runFill(questions, selectors, defaultAudioUrl, defaultImageUrl, d
     /** 根据「输入框用途」(role) 从题目 q 里取对应字段的值，支持 blank_*_N 动态角色 */
     const getValueForRole = (role) => {
       const opts = getOptionsArray(q);
+      // 顶层 candidates：单题的听后应答题候选答案，用 " / " 分隔填入"设置选项"
+      // 只有 listening_response 题型才使用此字段，避免影响其他题型
+      if (role === "candidates") {
+        if (q.type !== "listening_response") {
+          log(`  getValueForRole(candidates): 非 listening_response 题型，跳过`);
+          return "";
+        }
+        const candidates = q.candidates || [];
+        if (Array.isArray(candidates) && candidates.length > 0) {
+          const result = sanitizeAnswerChars(candidates.map(c => String(c).trim()).filter(Boolean).join(" / "));
+          log(`  getValueForRole(candidates): 返回值="${result}"`);
+          return result;
+        }
+        return "";
+      }
       // blank_candidates_1 / blank_candidates_2：小题的「口答提示」textarea（页面叫"设置选项"），用 / 分隔
       // 注意：这不是真正的 A/B/C/D 选择题选项，而是供学生口头回答时参考的提示内容
       const candidatesMatch = role.match(/^blank_candidates_(\d+)$/);
@@ -3728,9 +3756,18 @@ async function runFill(questions, selectors, defaultAudioUrl, defaultImageUrl, d
         const blanks = q.blanks || [];
         const blank = blanks[idx];
         log(`  getValueForRole(${role}): idx=${idx}, blank存在=${!!blank}, blanks长度=${blanks.length}`);
-        if (!blank) return "";
-        // 从 blank.options 数组取候选提示，用 " / " 分隔
-        const blankOpts = Array.isArray(blank.options) ? blank.options : [];
+        // 优先从 blank.candidates 取值（听后应答题），其次从 blank.options 取值
+        let blankOpts = [];
+        if (blank) {
+          blankOpts = Array.isArray(blank.candidates) && blank.candidates.length > 0
+            ? blank.candidates
+            : (Array.isArray(blank.options) ? blank.options : []);
+        }
+        // 兜底：如果 blank 没有 candidates/options，尝试从顶层 q.candidates 取值
+        if (blankOpts.length === 0 && Array.isArray(q.candidates) && q.candidates.length > 0) {
+          blankOpts = q.candidates;
+          log(`  getValueForRole(${role}): 从顶层 q.candidates 取值`);
+        }
         log(`  getValueForRole(${role}): blankOpts长度=${blankOpts.length}, 内容=${JSON.stringify(blankOpts).slice(0,100)}`);
         if (blankOpts.length === 0) return "";
         // 去除选项前缀（如 "A. xxx" → "xxx"）并用 / 分隔
@@ -3804,18 +3841,23 @@ async function runFill(questions, selectors, defaultAudioUrl, defaultImageUrl, d
           return sanitizeAnswerChars((q.question || "").toString().trim());
         }
         if (role === "question") {
-          // 设置题干：优先用 q.question
-          const qText = (q.question || "").toString().trim();
-          if (qText) return sanitizeAnswerChars(qText);
           // 询问信息题兜底：使用默认题干
           if (isInquiryType) {
+            const qText = (q.question || "").toString().trim();
+            if (qText) return sanitizeAnswerChars(qText);
             return sanitizeAnswerChars("请根据以下提示提两个问题。每个问题有15秒钟的准备时间和8秒钟的提问时间。");
           }
-          // 兜底：填入候选项（换行分隔）——用于听选信息场景
-          const candidates = q.candidates || q.options || [];
+          // 听后应答题（非询问信息）：设置题干 = candidates（候选答案，换行分隔）
+          // 因为 listening_script 已经填了问句，题干应该填候选答案
+          const candidates = q.candidates || [];
           if (Array.isArray(candidates) && candidates.length > 0) {
-            return candidates.join("\n");
+            const result = sanitizeAnswerChars(candidates.join("\n"));
+            log(`  listening_response 题型，题干填入 candidates: ${result.slice(0, 50)}`);
+            return result;
           }
+          // 兜底：用 q.question
+          const qText = (q.question || "").toString().trim();
+          if (qText) return sanitizeAnswerChars(qText);
           return "";
         }
       }
@@ -4432,8 +4474,12 @@ async function runFill(questions, selectors, defaultAudioUrl, defaultImageUrl, d
       } else {
         // 小题听力原文已在 listening_script + hasBlanks 分支里逐空填过，此处不再重复填
         if (hasBlanks && /^blank_script_\d+$/.test(role)) { log(`  skip ${role} (已在 listening_script 分支填过)`); continue; }
-        // listening_fill_and_retell 题型的 blank_question_N 与顶层 question 相同，跳过避免重复填充
-        if (q.type === "listening_fill_and_retell" && /^blank_question_\d+$/.test(role)) { log(`  skip ${role} (listening_fill_and_retell 题型，题干已在顶层填过)`); continue; }
+        // listening_fill_and_retell 题型：只跳过第1小题的 blank_question_1（信息记录，question 通常为空）
+        // 第2小题的 blank_question_2 是转述开头，需要填入
+        if (q.type === "listening_fill_and_retell" && role === "blank_question_1") { 
+          log(`  skip ${role} (listening_fill_and_retell 第1小题，题干通常为空)`); 
+          continue; 
+        }
         const value = getValueForRole(role);
         if (!value) { log(`  skip ${role} (无值)`); continue; }
         // blank_script_N / blank_audio_N 用 partSel 前缀选择器，Vue/React 可能在 await delay 后清除属性，再次打标

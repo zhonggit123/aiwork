@@ -499,6 +499,101 @@ def _render_table_to_image(
     font_regular = _load_font(font_paths_regular, scaled_font_size)
     font_bold = _load_font(font_paths_bold, scaled_font_size)
 
+    # 重新计算行高：考虑自动换行后的实际行数
+    import re as re_module
+    def _count_wrapped_lines(cell_runs, max_text_w, font_reg, font_bld, draw_ctx):
+        """计算自动换行后的实际行数"""
+        lines = _process_runs(cell_runs)
+        total_lines = 0
+        for line_runs in lines:
+            line_text = "".join(r["text"] for r in line_runs)
+            try:
+                bbox = draw_ctx.textbbox((0, 0), line_text, font=font_reg)
+                line_w = bbox[2] - bbox[0]
+            except Exception:
+                line_w = len(line_text) * scaled_font_size
+            
+            if line_w <= max_text_w:
+                total_lines += 1
+            else:
+                # 模拟自动换行
+                tokens = []
+                for run in line_runs:
+                    run_text = run.get("text", "")
+                    is_bold = run.get("bold", False)
+                    parts = re_module.findall(r'[a-zA-Z0-9]+|_+|[^\s\w]+|\s+|[\u4e00-\u9fff]', run_text)
+                    for part in parts:
+                        tokens.append((part, is_bold))
+                
+                current_w = 0
+                wrapped_count = 1
+                for token_text, is_bold in tokens:
+                    fnt = font_bld if is_bold else font_reg
+                    try:
+                        token_bbox = draw_ctx.textbbox((0, 0), token_text, font=fnt)
+                        token_w = token_bbox[2] - token_bbox[0]
+                    except Exception:
+                        token_w = len(token_text) * scaled_font_size
+                    
+                    if current_w + token_w > max_text_w and current_w > 0:
+                        wrapped_count += 1
+                        current_w = 0
+                    current_w += token_w
+                total_lines += wrapped_count
+        return max(total_lines, 1)
+
+    # 创建临时绘图上下文用于测量
+    temp_img2 = Image.new('RGB', (1, 1))
+    temp_draw2 = ImageDraw.Draw(temp_img2)
+    
+    # 重新计算每行的实际高度（考虑自动换行）
+    actual_row_heights = scaled_row_heights.copy()
+    cell_padding = 6
+    
+    for (r_idx, grid_col), (grid_span, row_span) in (cell_spans or {}).items():
+        if row_span > 1:
+            continue  # 跳过纵向合并的单元格，它们的高度已经合并计算
+        
+        # 计算单元格宽度
+        cell_w = sum(scaled_col_widths[grid_col:grid_col + grid_span])
+        max_text_w = cell_w - 2 * cell_padding
+        
+        # 找到对应的 cell_runs
+        cell_runs = None
+        if r_idx < len(rich_data):
+            data_col = 0
+            cur_grid_col = 0
+            row_merge = merge_info[r_idx] if merge_info and r_idx < len(merge_info) else None
+            for d_idx in range(len(rich_data[r_idx])):
+                if row_merge and d_idx < len(row_merge):
+                    gs, is_cont = row_merge[d_idx]
+                    if is_cont:
+                        cur_grid_col += 1
+                        continue
+                    if cur_grid_col == grid_col:
+                        cell_runs = rich_data[r_idx][d_idx]
+                        break
+                    cur_grid_col += gs if gs > 0 else 1
+                else:
+                    if cur_grid_col == grid_col:
+                        cell_runs = rich_data[r_idx][d_idx]
+                        break
+                    cur_grid_col += 1
+        
+        if not cell_runs:
+            continue
+        
+        # 计算自动换行后的行数
+        wrapped_lines = _count_wrapped_lines(cell_runs, max_text_w, font_regular, font_bold, temp_draw2)
+        needed_height = wrapped_lines * scaled_line_height + 8
+        
+        # 更新行高
+        if needed_height > actual_row_heights[r_idx]:
+            actual_row_heights[r_idx] = needed_height
+    
+    scaled_row_heights = actual_row_heights
+    scaled_table_h = sum(scaled_row_heights)
+
     img = Image.new('RGB', (canvas_w, canvas_h), (255, 255, 255))
     draw = ImageDraw.Draw(img)
 
@@ -621,7 +716,12 @@ def _render_table_to_image(
                 
                 num_lines = len(wrapped_lines)
                 total_text_h = num_lines * scaled_line_height
-                start_y = y + (cell_h - total_text_h) // 2
+                # 如果文字高度超过单元格高度，从顶部开始绘制（加少量内边距）
+                # 否则垂直居中
+                if total_text_h > cell_h - 8:
+                    start_y = y + 4  # 顶部对齐，留 4px 内边距
+                else:
+                    start_y = y + (cell_h - total_text_h) // 2
 
                 for line_idx, line_runs in enumerate(wrapped_lines):
                     line_text = "".join(r["text"] for r in line_runs)
