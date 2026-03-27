@@ -28,7 +28,7 @@ import subprocess
 
 
 class ServerGUI:
-    VERSION = "7.2.3"
+    VERSION = "7.2.5"
     
     def __init__(self, root):
         self.root = root

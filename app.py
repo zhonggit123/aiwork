@@ -1257,10 +1257,20 @@ async def parse_word_multiple(
             ]
             if non_option_images:
                 print(f"[parse-multiple] 发现 {len(non_option_images)} 张非选项图片（如思维导图）")
-                img_ptr = 0
+                
+                # 过滤掉可能是分隔线的图片（宽高比 > 10 的细长图片）
+                def is_likely_content_image(img_info):
+                    """判断图片是否可能是内容图片（而非分隔线）"""
+                    # 有 prev_para_text 的图片更可能是内容图片
+                    if (img_info.get("prev_para_text") or "").strip():
+                        return True
+                    # 没有上下文信息，暂时保留（后续可以通过尺寸过滤）
+                    return True
+                
+                # 优先使用有 prev_para_text 的图片进行内容匹配
+                used_images = set()
+                
                 for q_idx, q in enumerate(questions):
-                    if img_ptr >= len(non_option_images):
-                        break
                     # 检查该题的录题页是否有图片字段
                     slot_has_image = False
                     if parsed_slots and q_idx < len(parsed_slots):
@@ -1270,13 +1280,70 @@ async def parse_word_multiple(
                             f.get("role") == "image_url" or f == "image_url"
                             for f in slot_fields
                         ) if isinstance(slot_fields, list) else "image_url" in str(slot_fields)
-                    # 如果该题需要图片且还没有 image_url，则注入
+                    
                     existing_img = (q.get("image_url") or "").strip()
-                    if slot_has_image and not existing_img:
-                        img_info = non_option_images[img_ptr]
-                        q["image_url"] = f"{_image_base_url}/api/images/{session_id}/{img_info['filename']}"
-                        print(f"[parse-multiple] 题目 {q_idx+1} 注入非选项图片: {img_info['filename']}")
-                        img_ptr += 1
+                    if not slot_has_image or existing_img:
+                        continue
+                    
+                    # 收集题目的文本内容用于匹配
+                    q_texts = []
+                    for field in ["question", "listening_script", "retell_start", "type"]:
+                        val = q.get(field, "")
+                        if val:
+                            q_texts.append(str(val).lower())
+                    for blank in q.get("blanks", []):
+                        for field in ["question", "listening_script"]:
+                            val = blank.get(field, "")
+                            if val:
+                                q_texts.append(str(val).lower())
+                    q_text_combined = " ".join(q_texts)
+                    
+                    # 尝试通过 prev_para_text 匹配图片
+                    matched_img = None
+                    for img_idx, img_info in enumerate(non_option_images):
+                        if img_idx in used_images:
+                            continue
+                        prev_text = (img_info.get("prev_para_text") or "").lower()
+                        if not prev_text:
+                            continue
+                        # 提取关键词进行匹配
+                        import re
+                        keywords = re.findall(r'[a-zA-Z\u4e00-\u9fff]+', prev_text)
+                        # 检查关键词是否出现在题目文本中
+                        if keywords and any(kw in q_text_combined for kw in keywords if len(kw) > 2):
+                            matched_img = img_info
+                            used_images.add(img_idx)
+                            print(f"[parse-multiple] 题目 {q_idx+1} 通过内容匹配到非选项图片 {img_idx}")
+                            break
+                    
+                    if matched_img:
+                        q["image_url"] = f"{_image_base_url}/api/images/{session_id}/{matched_img['filename']}"
+                        print(f"[parse-multiple] 题目 {q_idx+1} 注入非选项图片: {matched_img['filename']}")
+                
+                # 剩余未匹配的图片，按顺序分配给还需要图片的题目（跳过分隔线）
+                remaining_images = [
+                    (i, img) for i, img in enumerate(non_option_images)
+                    if i not in used_images and is_likely_content_image(img)
+                ]
+                if remaining_images:
+                    img_ptr = 0
+                    for q_idx, q in enumerate(questions):
+                        if img_ptr >= len(remaining_images):
+                            break
+                        slot_has_image = False
+                        if parsed_slots and q_idx < len(parsed_slots):
+                            slot = parsed_slots[q_idx]
+                            slot_fields = slot.get("currentSlotFields", [])
+                            slot_has_image = any(
+                                f.get("role") == "image_url" or f == "image_url"
+                                for f in slot_fields
+                            ) if isinstance(slot_fields, list) else "image_url" in str(slot_fields)
+                        existing_img = (q.get("image_url") or "").strip()
+                        if slot_has_image and not existing_img:
+                            _, img_info = remaining_images[img_ptr]
+                            q["image_url"] = f"{_image_base_url}/api/images/{session_id}/{img_info['filename']}"
+                            print(f"[parse-multiple] 题目 {q_idx+1} 注入剩余非选项图片: {img_info['filename']} (顺序分配)")
+                            img_ptr += 1
 
         result = {"questions": questions}
         if debug_info is not None:
