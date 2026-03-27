@@ -1097,11 +1097,11 @@ async def parse_word_multiple(
 
         # ── 表格图片注入（题干图片）──────────────────────────────────────────────
         if saved_table_images:
-            # 策略：将表格图片分配给录题页结构中有 image_url 字段的题目
-            tbl_ptr = 0
+            # 策略：通过内容匹配将表格图片分配给对应的题目
+            # 检查题目的 question/listening_script/retell_start 等字段是否包含表格的 first_cell 内容
+            used_tables = set()
+            
             for q_idx, q in enumerate(questions):
-                if tbl_ptr >= len(saved_table_images):
-                    break
                 # 检查该题对应的 slot 是否有 image_url 字段
                 slot_idx = q_idx
                 slot_has_image = False
@@ -1113,13 +1113,65 @@ async def parse_word_multiple(
                         for f in slot_fields
                     ) if isinstance(slot_fields, list) else "image_url" in str(slot_fields)
                 
-                # 如果该题的录题页有图片字段，且题目没有 image_url，则注入
+                # 如果该题的录题页有图片字段，且题目没有 image_url，则尝试匹配表格
                 existing_img = (q.get("image_url") or "").strip()
                 if slot_has_image and not existing_img:
-                    tbl_info = saved_table_images[tbl_ptr]
-                    q["image_url"] = f"{_image_base_url}/api/images/{session_id}/{tbl_info['filename']}"
-                    print(f"[parse-multiple] 题目 {q_idx+1} 注入表格图片: {tbl_info['filename']} (slot有image_url字段)")
-                    tbl_ptr += 1
+                    # 收集题目的文本内容用于匹配
+                    q_texts = []
+                    for field in ["question", "listening_script", "retell_start", "type"]:
+                        val = q.get(field, "")
+                        if val:
+                            q_texts.append(str(val).lower())
+                    # 也检查 blanks 中的内容
+                    for blank in q.get("blanks", []):
+                        for field in ["question", "listening_script"]:
+                            val = blank.get(field, "")
+                            if val:
+                                q_texts.append(str(val).lower())
+                    q_text_combined = " ".join(q_texts)
+                    
+                    # 找到与题目内容匹配的表格
+                    matched_tbl = None
+                    for tbl_idx, tbl_info in enumerate(saved_table_images):
+                        if tbl_idx in used_tables:
+                            continue
+                        first_cell = (tbl_info.get("first_cell") or "").lower()
+                        # 提取 first_cell 中的关键词（去掉数字和标点）
+                        import re
+                        keywords = re.findall(r'[a-zA-Z\u4e00-\u9fff]+', first_cell)
+                        # 检查关键词是否出现在题目文本中
+                        if keywords and any(kw in q_text_combined for kw in keywords if len(kw) > 2):
+                            matched_tbl = tbl_info
+                            used_tables.add(tbl_idx)
+                            print(f"[parse-multiple] 题目 {q_idx+1} 匹配到表格 {tbl_idx} (first_cell 关键词匹配)")
+                            break
+                    
+                    if matched_tbl:
+                        q["image_url"] = f"{_image_base_url}/api/images/{session_id}/{matched_tbl['filename']}"
+                        print(f"[parse-multiple] 题目 {q_idx+1} 注入表格图片: {matched_tbl['filename']}")
+            
+            # 如果还有未分配的表格，按顺序分配给剩余需要图片的题目
+            remaining_tables = [t for i, t in enumerate(saved_table_images) if i not in used_tables]
+            if remaining_tables:
+                tbl_ptr = 0
+                for q_idx, q in enumerate(questions):
+                    if tbl_ptr >= len(remaining_tables):
+                        break
+                    slot_idx = q_idx
+                    slot_has_image = False
+                    if parsed_slots and slot_idx < len(parsed_slots):
+                        slot = parsed_slots[slot_idx]
+                        slot_fields = slot.get("currentSlotFields", [])
+                        slot_has_image = any(
+                            f.get("role") == "image_url" or f == "image_url"
+                            for f in slot_fields
+                        ) if isinstance(slot_fields, list) else "image_url" in str(slot_fields)
+                    existing_img = (q.get("image_url") or "").strip()
+                    if slot_has_image and not existing_img:
+                        tbl_info = remaining_tables[tbl_ptr]
+                        q["image_url"] = f"{_image_base_url}/api/images/{session_id}/{tbl_info['filename']}"
+                        print(f"[parse-multiple] 题目 {q_idx+1} 注入剩余表格图片: {tbl_info['filename']} (顺序分配)")
+                        tbl_ptr += 1
 
         result = {"questions": questions}
         if debug_info is not None:

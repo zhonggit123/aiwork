@@ -2318,6 +2318,16 @@ if (dropZone) {
     if (dropZone.classList.contains("is-parsing")) return;
     if (e.target.closest("button") || e.target.closest(".results-actions") || e.target.closest(".btn-row")) return;
 
+    // 如果点击的是文件名区域（.drop-text），且已有文件，则触发预览而不是打开文件选择
+    const dzN = document.getElementById("dzNormal");
+    const dropText = dzN?.querySelector(".drop-text");
+    if (dropZone.classList.contains("has-files") && _selectedFiles.length > 0 && dropText && dropText.contains(e.target)) {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      showFilePreview(_selectedFiles[0]);
+      return;
+    }
+
     // 先检查是否已经分析过页面结构（上方已有「尚未分析…」提示，仅高亮按钮）
     const { selectors } = await chrome.storage.sync.get("selectors");
     const hasStructure = selectors && Object.values(selectors).some(Boolean);
@@ -2502,22 +2512,7 @@ async function readDocxText(file) {
   });
 }
 
-// 点击 drop-zone 中的文件名时预览
-document.getElementById("dropZone")?.addEventListener("click", (e) => {
-  const dz = document.getElementById("dropZone");
-  const dzN = document.getElementById("dzNormal");
-  
-  // 只有在 selected 状态（有文件）且点击的是文件名区域时才预览
-  if (dz.classList.contains("has-files") && _selectedFiles.length > 0) {
-    const dropText = dzN?.querySelector(".drop-text");
-    if (dropText && dropText.contains(e.target)) {
-      e.stopPropagation();
-      // 如果只有一个文件，直接预览；多个文件时预览第一个
-      showFilePreview(_selectedFiles[0]);
-      return;
-    }
-  }
-});
+// 点击 drop-zone 中的文件名时预览的逻辑已合并到主 dropZone click 处理中
 
 // ─── 取消识别按钮 ──────────────────────────────────────────────────────────
 document.getElementById("cancelParse").addEventListener("click", () => {

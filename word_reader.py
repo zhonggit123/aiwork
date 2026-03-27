@@ -10,29 +10,149 @@ from docx import Document
 from docx.oxml.ns import qn
 
 
-def read_word_text(docx_path: str) -> str:
-    """读取 Word 全文（仅文字，不含图片）。
+def _extract_para_text(para) -> str:
+    """从段落中提取文本，处理下划线空白等特殊格式。"""
+    run_texts = []
+    for run in para.runs:
+        if run.underline and run.text and not run.text.strip():
+            # 下划线空白 run（学生填写区域）→ 用 ___ 占位
+            run_texts.append("_" * max(len(run.text), 8))
+        else:
+            run_texts.append(run.text)
+    return "".join(run_texts).strip()
+
+
+def _table_to_markdown(table) -> str:
+    """将 Word 表格转换为 Markdown 格式的表格文本。
     
-    特殊处理：若某段落的 run 有下划线格式且文字全为空白，将其转换为 '___'，
-    这样下划线空白行（如转述节的填写区域）不会因 strip() 丢失。
+    处理合并单元格：
+    - 横向合并：只在第一个单元格显示内容
+    - 纵向合并：检测整列内容相同的情况，只在第一行显示，后续行显示为空
+    """
+    if not table.rows:
+        return ""
+    
+    # 第一步：收集所有单元格的原始数据
+    raw_data = []
+    for row_idx, row in enumerate(table.rows):
+        row_data = []
+        processed_in_row = set()
+        
+        for cell in row.cells:
+            cell_id = id(cell._tc)
+            
+            # 跳过横向合并的重复单元格
+            if cell_id in processed_in_row:
+                continue
+            processed_in_row.add(cell_id)
+            
+            # 提取单元格文本（多段落用空格连接）
+            cell_text = " ".join(
+                _extract_para_text(p) for p in cell.paragraphs
+            ).strip()
+            
+            # 清理文本中的换行和多余空格
+            cell_text = re.sub(r'\s+', ' ', cell_text).strip()
+            
+            row_data.append(cell_text)
+        
+        if row_data:
+            raw_data.append(row_data)
+    
+    if not raw_data:
+        return ""
+    
+    # 确保所有行的列数一致
+    max_cols = max(len(row) for row in raw_data)
+    for row in raw_data:
+        while len(row) < max_cols:
+            row.append("")
+    
+    # 第二步：检测每列是否有"内容相同的连续单元格"（纵向合并）
+    # 对于每列，如果连续多行内容相同且非空，只在第一行显示，后续行置空
+    rows_data = [list(row) for row in raw_data]  # 深拷贝
+    
+    for col_idx in range(max_cols):
+        # 提取这一列的所有内容
+        col_values = [rows_data[row_idx][col_idx] for row_idx in range(len(rows_data))]
+        
+        # 找出连续相同的范围
+        row_idx = 0
+        while row_idx < len(col_values):
+            current_val = col_values[row_idx]
+            if not current_val:  # 跳过空单元格
+                row_idx += 1
+                continue
+            
+            # 找出从当前位置开始，连续相同的行数
+            end_idx = row_idx + 1
+            while end_idx < len(col_values) and col_values[end_idx] == current_val:
+                end_idx += 1
+            
+            # 如果有连续相同的（至少2行），清空后续行
+            if end_idx > row_idx + 1:
+                for clear_idx in range(row_idx + 1, end_idx):
+                    rows_data[clear_idx][col_idx] = ""
+            
+            row_idx = end_idx
+    
+    # 生成 Markdown 表格
+    lines = []
+    
+    # 表头（第一行）
+    escaped_row0 = [cell.replace('|', '\\|') for cell in rows_data[0]]
+    lines.append("| " + " | ".join(escaped_row0) + " |")
+    # 分隔线
+    lines.append("| " + " | ".join(["---"] * max_cols) + " |")
+    # 数据行
+    for row in rows_data[1:]:
+        escaped_row = [cell.replace('|', '\\|') for cell in row]
+        lines.append("| " + " | ".join(escaped_row) + " |")
+    
+    return "\n".join(lines)
+
+
+def read_word_text(docx_path: str) -> str:
+    """读取 Word 全文（包含文字和表格）。
+    
+    特殊处理：
+    1. 若某段落的 run 有下划线格式且文字全为空白，将其转换为 '___'
+    2. 表格会被转换为 Markdown 格式，保留结构信息供 LLM 理解
+    3. 按文档中的实际顺序输出段落和表格
     """
     path = Path(docx_path)
     if not path.exists():
         raise FileNotFoundError(f"Word 文件不存在: {docx_path}")
     doc = Document(path)
+    
+    # 获取文档 body 中所有元素的顺序（段落和表格交替出现）
+    # python-docx 的 doc.element.body 包含所有顶层元素
+    body = doc.element.body
+    
     parts = []
-    for para in doc.paragraphs:
-        # 逐 run 处理：下划线+纯空白 → 替换为下划线符号
-        run_texts = []
-        for run in para.runs:
-            if run.underline and run.text and not run.text.strip():
-                # 下划线空白 run（学生填写区域）→ 用 ___ 占位
-                run_texts.append("_" * max(len(run.text), 8))
-            else:
-                run_texts.append(run.text)
-        text = "".join(run_texts).strip()
-        if text:
-            parts.append(text)
+    para_idx = 0
+    table_idx = 0
+    
+    for child in body:
+        tag = child.tag.split('}')[-1]  # 去掉命名空间前缀
+        
+        if tag == 'p':  # 段落
+            if para_idx < len(doc.paragraphs):
+                para = doc.paragraphs[para_idx]
+                text = _extract_para_text(para)
+                if text:
+                    parts.append(text)
+                para_idx += 1
+        
+        elif tag == 'tbl':  # 表格
+            if table_idx < len(doc.tables):
+                table = doc.tables[table_idx]
+                table_md = _table_to_markdown(table)
+                if table_md:
+                    # 用明确的标记包裹表格，帮助 LLM 识别
+                    parts.append(f"\n【表格开始】\n{table_md}\n【表格结束】\n")
+                table_idx += 1
+    
     return "\n\n".join(parts)
 
 
@@ -181,7 +301,7 @@ def _render_table_to_image(
     rich_data: list,
     target_size: tuple = (1440, 960),
     padding: int = 40,
-    font_size: int = 32,
+    font_size: int = 42,
     merge_info: list = None,
     cols: int = None,
     cell_spans: dict = None,
@@ -195,7 +315,7 @@ def _render_table_to_image(
         rich_data: 二维列表，rich_data[row][col] 为 list of {text, bold, underline, newline}
         target_size: 输出图片尺寸 (width, height)
         padding: 表格四周留白
-        font_size: 字体大小
+        font_size: 字体大小（默认 42，比之前的 32 更大）
         merge_info: 合并信息，merge_info[row][col] = (grid_span, is_continuation)
         cols: 表格的实际列数（网格列数）
         cell_spans: 单元格跨度信息，{(row, col): (grid_span, row_span)}
@@ -372,8 +492,8 @@ def _render_table_to_image(
     
     scaled_table_h = sum(scaled_row_heights)
     
-    # 字体大小：按缩放比例，放大 12%
-    scaled_font_size = max(int(font_size * scale * 1.12), 20)
+    # 字体大小：按缩放比例，但确保最小 40px，最大不超过 72px
+    scaled_font_size = max(min(int(font_size * scale * 1.2), 72), 40)
     scaled_line_height = scaled_font_size + 6
 
     font_regular = _load_font(font_paths_regular, scaled_font_size)
@@ -407,6 +527,8 @@ def _render_table_to_image(
                 if row_merge and data_col_idx < len(row_merge):
                     gs, is_cont = row_merge[data_col_idx]
                     if is_cont:
+                        # 被纵向合并的单元格，跳过并移动到下一列
+                        grid_col_idx += 1
                         data_col_idx += 1
                         continue
                     grid_col_idx += gs if gs > 0 else 1
@@ -803,6 +925,12 @@ def extract_word_tables_as_images(
         
         rows = len(rich_data)
         first_cell_text = "".join(r.get("text", "") for r in rich_data[0][0]) if rich_data and rich_data[0] and rich_data[0][0] else ""
+
+        # 过滤：跳过单列纯文字表格（这种表格不需要图片展示，文字内容已在 read_word_text 中提取）
+        # 只保留多列表格或有复杂结构的表格
+        if cols == 1:
+            # 单列表格，跳过
+            continue
 
         # 渲染为图片，传递合并信息
         image_bytes = _render_table_to_image(
