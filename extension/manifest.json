@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "题库录入 AI",
-  "version": "7.2.7",
+  "version": "7.2.8",
   "description": "AI 辅助录入，支持 Word/PDF 解析、TTS 语音合成、一键填充表单",
   "icons": {
     "16": "icons/icon16.png",

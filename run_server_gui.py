@@ -48,7 +48,7 @@ class LogRedirector:
 
 
 class ServerGUI:
-    VERSION = "7.2.7"
+    VERSION = "7.2.8"
     
     def __init__(self, root):
         self.root = root
@@ -261,6 +261,7 @@ class ServerGUI:
         def run_server():
             try:
                 import uvicorn
+                import logging
                 from app import app
                 
                 self.server_running = True
@@ -269,13 +270,19 @@ class ServerGUI:
                 self.log("服务启动成功！")
                 self.log(f"监听地址: http://0.0.0.0:8766")
                 
-                # 配置 uvicorn 日志输出到队列
+                # 配置 uvicorn，禁用默认日志配置避免 GUI 模式下的问题
                 config = uvicorn.Config(
                     app,
                     host="0.0.0.0",
                     port=8766,
                     log_level="info",
+                    log_config=None,  # 禁用默认日志配置
+                    access_log=False,  # 禁用访问日志避免输出问题
                 )
+                
+                # 设置基本日志
+                logging.basicConfig(level=logging.INFO)
+                
                 server = uvicorn.Server(config)
                 server.run()
                 
