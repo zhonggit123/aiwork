@@ -5126,9 +5126,54 @@ async function runFill(questions, selectors, defaultAudioUrl, defaultImageUrl, d
           }
         }
         
+        // 如果还没找到 file input，尝试从 audioFileName 输入框附近查找
+        if (!currentAudioFileSel && currentAudioUrlSel) {
+          const audioUrlEl = document.querySelector(currentAudioUrlSel);
+          if (audioUrlEl) {
+            // 查找同级或父级的 uploadify 容器
+            const parent = audioUrlEl.closest(".row, .form-group, .col, [class*='audio']") || audioUrlEl.parentElement;
+            if (parent) {
+              const nearbyUploadify = parent.querySelector(".uploadify, [id*='upload'], [class*='upload']");
+              if (nearbyUploadify) {
+                const fi = nearbyUploadify.querySelector("input[type='file']");
+                if (fi) {
+                  currentAudioFileSel = fi.id ? `#${fi.id}` : null;
+                  log(`  第 ${i + 1} 题：从audioFileName附近找到上传框: ${currentAudioFileSel}`);
+                }
+              }
+            }
+          }
+        }
+        
+        // 最后尝试：直接查找页面上所有 uploadify 的 file input，排除图片上传
+        if (!currentAudioFileSel) {
+          const allUploadify = scope.querySelectorAll(".uploadify input[type='file'], [id*='upload'] input[type='file']");
+          for (const fi of allUploadify) {
+            const container = fi.closest(".uploadify, [id*='upload']");
+            const containerId = (container?.id || "").toLowerCase();
+            const containerClass = (container?.className || "").toLowerCase();
+            // 排除明确是图片上传的
+            if (containerId.includes("image") || containerClass.includes("image")) continue;
+            // 优先选择包含 audio 的
+            if (containerId.includes("audio") || containerClass.includes("audio")) {
+              currentAudioFileSel = fi.id ? `#${fi.id}` : null;
+              log(`  第 ${i + 1} 题：通过遍历找到音频上传框: ${currentAudioFileSel}`);
+              break;
+            }
+          }
+        }
+        
         // 如果还没找到，尝试使用初始检测的选择器
         if (!currentAudioFileSel && !currentAudioUrlSel) {
-          if (audioFileSels.length > 0) currentAudioFileSel = audioFileSels[0];
+          // 只使用真正的 input[type=file] 选择器，不使用按钮
+          if (audioFileSels.length > 0) {
+            const testEl = document.querySelector(audioFileSels[0]);
+            if (testEl && testEl.tagName === "INPUT" && testEl.type === "file") {
+              currentAudioFileSel = audioFileSels[0];
+            } else {
+              log(`  第 ${i + 1} 题：初始 audioFileSel "${audioFileSels[0]}" 不是 input[type=file]，跳过`);
+            }
+          }
           if (audioUrlSels.length > 0) currentAudioUrlSel = audioUrlSels[0];
           log(`  第 ${i + 1} 题：使用初始检测的选择器 - audioFile: ${currentAudioFileSel}, audioUrl: ${currentAudioUrlSel}`);
         }
