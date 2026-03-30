@@ -29,6 +29,12 @@ jobs:
           pip install -r requirements.txt
           pip install pyinstaller
 
+      - name: 生成 extension.zip
+        run: |
+          if (Test-Path extension.zip) { Remove-Item extension.zip }
+          Compress-Archive -Path extension -DestinationPath extension.zip
+        shell: pwsh
+
       - name: 打包 GUI 版 exe
         run: |
           pyinstaller run_server_gui.spec
