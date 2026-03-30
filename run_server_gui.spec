@@ -26,6 +26,15 @@ hiddenimports = [
     "uvicorn.protocols.websockets.auto",
     "uvicorn.lifespan",
     "uvicorn.lifespan.on",
+    # edge-tts 相关模块
+    "edge_tts",
+    "edge_tts.communicate",
+    "edge_tts.submaker",
+    "edge_tts.list_voices",
+    # aiohttp 相关（edge-tts 依赖）
+    "aiohttp",
+    "aiohttp.web",
+    "certifi",
 ]
 
 a = Analysis(
