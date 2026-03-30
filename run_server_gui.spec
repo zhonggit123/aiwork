@@ -16,6 +16,7 @@ datas = [
 
 # 可能被动态导入的模块，显式收集避免漏打
 hiddenimports = [
+    # uvicorn 相关
     "uvicorn.logging",
     "uvicorn.loops",
     "uvicorn.loops.auto",
@@ -26,7 +27,7 @@ hiddenimports = [
     "uvicorn.protocols.websockets.auto",
     "uvicorn.lifespan",
     "uvicorn.lifespan.on",
-    # edge-tts 相关模块
+    # edge-tts 相关模块（TTS 语音合成）
     "edge_tts",
     "edge_tts.communicate",
     "edge_tts.submaker",
@@ -35,6 +36,29 @@ hiddenimports = [
     "aiohttp",
     "aiohttp.web",
     "certifi",
+    # PIL/Pillow 图片处理
+    "PIL",
+    "PIL.Image",
+    "PIL.ImageDraw",
+    "PIL.ImageFont",
+    # pymupdf/fitz PDF 解析
+    "fitz",
+    # json_repair JSON 修复
+    "json_repair",
+    # python-docx Word 解析
+    "docx",
+    "docx.oxml",
+    "docx.oxml.ns",
+    # openai API
+    "openai",
+    # pydantic 数据验证
+    "pydantic",
+    # yaml 配置
+    "yaml",
+    # httpx HTTP 客户端
+    "httpx",
+    # multipart 文件上传
+    "multipart",
 ]
 
 a = Analysis(
