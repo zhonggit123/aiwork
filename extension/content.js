@@ -5191,10 +5191,14 @@ async function runFill(questions, selectors, defaultAudioUrl, defaultImageUrl, d
         
         if (currentAudioFileSel || currentAudioUrlSel) {
           try {
+            log(`  第 ${i + 1} 题：开始处理TTS音频上传 - fileSel=${currentAudioFileSel}, urlSel=${currentAudioUrlSel}`);
             const audioBlob = base64ToBlob(ttsAudioBase64, "audio/mpeg");
+            if (!audioBlob) {
+              log(`  第 ${i + 1} 题：错误：base64ToBlob 返回 null，ttsAudioBase64长度=${ttsAudioBase64?.length}`);
+            }
             if (audioBlob) {
               const audioFile = new File([audioBlob], `tts_q${i + 1}.mp3`, { type: "audio/mpeg" });
-              log(`  第 ${i + 1} 题：音频File创建: name=${audioFile.name} size=${audioFile.size}`);
+              log(`  第 ${i + 1} 题：音频File创建: name=${audioFile.name} size=${audioFile.size} type=${audioFile.type}`);
               
               let uploaded = false;
               
@@ -5300,7 +5304,9 @@ async function runFill(questions, selectors, defaultAudioUrl, defaultImageUrl, d
               }
               
               if (!uploaded) {
-                log(`  第 ${i + 1} 题：音频上传失败或未找到上传框`);
+                log(`  第 ${i + 1} 题：音频上传失败 - jQuery存在=${!!window.jQuery}, uploadify存在=${!!(window.jQuery?.fn?.uploadify)}, fileEl存在=${!!document.querySelector(currentAudioFileSel)}`);
+              } else {
+                log(`  第 ${i + 1} 题：音频上传成功`);
               }
             }
           } catch (e) {
