@@ -48,7 +48,7 @@ class LogRedirector:
 
 
 class ServerGUI:
-    VERSION = "7.4.2"
+    VERSION = "7.4.3"
     
     def __init__(self, root):
         self.root = root

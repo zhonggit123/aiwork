@@ -8,7 +8,7 @@ block_cipher = None
 
 # 需要随 exe 打包的数据文件（会解压到运行时的临时目录 _MEIPASS）
 datas = [
-    ("config.example.yaml", "."),
+    ("config.yaml", "."),  # 内置配置文件（含 API Key），无需用户手动配置
     ("static", "static"),
     ("samples", "samples"),
     ("extension.zip", "."),  # 插件压缩包，供用户下载

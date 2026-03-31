@@ -247,10 +247,21 @@ def _enrich_questions_with_option_images(
 
 
 def get_config() -> dict:
+    """加载配置文件。优先级：exe 同目录 > 内置打包配置。"""
     global _CONFIG, _CONFIG_MTIME
-    path = _BASE_DIR / "config.yaml"
-    if not path.exists():
-        raise FileNotFoundError("请复制 config.example.yaml 为 config.yaml 并填写（与 exe 同目录）")
+    
+    # 优先使用 exe 同目录的配置（方便用户自定义覆盖）
+    user_path = _BASE_DIR / "config.yaml"
+    # 其次使用打包内置的配置（_RESOURCE_DIR 是 PyInstaller 的 _MEIPASS）
+    builtin_path = _RESOURCE_DIR / "config.yaml"
+    
+    if user_path.exists():
+        path = user_path
+    elif builtin_path.exists():
+        path = builtin_path
+    else:
+        raise FileNotFoundError("配置文件缺失，请联系开发者")
+    
     # 检测文件修改时间，支持热加载
     mtime = path.stat().st_mtime
     if _CONFIG is None or mtime > _CONFIG_MTIME:
