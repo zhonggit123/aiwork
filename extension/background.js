@@ -608,7 +608,22 @@ async function handleParse(filesData) {
       }
       return;
     }
-    const errText = `解析失败：${e.message || e}`;
+    // 根据错误类型给出更明确的中文提示
+    let errText;
+    const errMsg = (e.message || String(e)).toLowerCase();
+    if (errMsg.includes("failed to fetch") || errMsg.includes("networkerror") || errMsg.includes("network error")) {
+      errText = "连接服务失败，请检查：\n① 后端服务是否已启动（题库录入服务.exe）\n② 服务地址是否正确（默认 http://127.0.0.1:8766）";
+    } else if (errMsg.includes("timeout") || errMsg.includes("timed out")) {
+      errText = "请求超时，请检查：\n① 后端服务是否正常运行\n② 网络连接是否稳定";
+    } else if (errMsg.includes("cors") || errMsg.includes("cross-origin")) {
+      errText = "跨域请求被阻止，请检查后端服务是否正确配置 CORS";
+    } else if (errMsg.includes("500") || errMsg.includes("internal server error")) {
+      errText = "服务器内部错误，请检查后端日志";
+    } else if (errMsg.includes("api") || errMsg.includes("key") || errMsg.includes("unauthorized")) {
+      errText = "API 配置错误，请检查 config.yaml 中的 API Key 是否正确";
+    } else {
+      errText = `解析失败：${e.message || e}`;
+    }
     await setState({ status: "error", text: errText });
     if (parseTabId) updateBadgeForRecordTab(parseTabId, "parse_error");
     broadcastToPopup({ type: "PARSE_ERROR", text: errText });
