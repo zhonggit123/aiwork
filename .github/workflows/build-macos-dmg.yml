@@ -1,0 +1,53 @@
+name: build-macos-dmg
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    runs-on: macos-latest
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 设置 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: 安装依赖
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: 生成 extension.zip
+        run: |
+          rm -f extension.zip
+          /usr/bin/zip -r extension.zip extension
+
+      - name: 生成 macOS 图标（icns）
+        run: |
+          python scripts/generate_macos_icon.py
+          iconutil -c icns build/icon.iconset -o build/icon.icns
+
+      - name: 打包 macOS App
+        run: |
+          pyinstaller run_server_gui_macos.spec
+
+      - name: 生成 dmg
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          chmod +x scripts/build_macos_dmg.sh
+          ./scripts/build_macos_dmg.sh "${VERSION}"
+
+      - name: 上传 dmg 为 Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: 题库录入服务-macOS
+          path: 题库录入服务-macOS-*.dmg
+
