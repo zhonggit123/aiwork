@@ -1,4 +1,4 @@
-config.yaml
+# config.yaml  # 已内置打包，需要提交
 *.docx
 __pycache__/
 .venv/
