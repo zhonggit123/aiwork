@@ -2035,7 +2035,7 @@ async function ttsWithRetry(params, maxRetries = 3, logPrefix = "", logFn = null
 async function runFill(questions, selectors, defaultAudioUrl, defaultImageUrl, debugSource, ttsSettings) {
   // TTS 设置默认值
   const tts = ttsSettings || {};
-  const ttsProvider = tts.provider || "doubao";  // 服务商：doubao、youdao 或 edge
+  const ttsProvider = tts.provider || "edge";  // 服务商：doubao、youdao 或 edge，默认 edge（免费）
   // 根据服务商设置默认音色
   let ttsFemaleVoice, ttsMaleVoice;
   if (ttsProvider === "doubao") {

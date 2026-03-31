@@ -1997,7 +1997,7 @@ async function doFillFromNormalized(normalizedSlice, startIdx1Based) {
   _lastFillOffset = startIdx1Based - 1;
   setFillingState(true);
 
-  const provider = ttsProvider || "doubao";
+  const provider = ttsProvider || "edge";
   try {
     const result = await chrome.tabs.sendMessage(tabId, {
       type: "FILL_FORM",
@@ -2178,7 +2178,7 @@ async function doFill(questions, skipTts = false) {
 
   setFillingState(true);
 
-  const provider2 = ttsProvider2 || "doubao";
+  const provider2 = ttsProvider2 || "edge";
   try {
     const result = await chrome.tabs.sendMessage(tabId, {
       type: "FILL_FORM",
@@ -2718,7 +2718,7 @@ document.getElementById("fill").addEventListener("click", async () => {
     "ttsFemaleVoiceYoudao", "ttsMaleVoiceYoudao", "ttsFemaleVoiceEdge", "ttsMaleVoiceEdge",
     "ttsFemaleSpeed", "ttsMaleSpeed", "ttsFemaleVolume", "ttsMaleVolume", "ttsContextTexts"
   ]);
-  const provider3 = ttsProvider3 || "doubao";
+  const provider3 = ttsProvider3 || "edge";
   try {
     await chrome.tabs.sendMessage(tab.id, {
       type: "FILL_FORM",
